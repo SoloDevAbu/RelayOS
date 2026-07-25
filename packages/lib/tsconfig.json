@@ -1,0 +1,11 @@
+{
+  "extends": "@hookrelay/typescript-config/base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+    // "moduleResolution": "bundler"
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+  //   "type": "module"
+}
