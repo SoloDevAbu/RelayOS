@@ -1,5 +1,5 @@
 {
-  "extends": "@hookrelay/typescript-config/base.json",
+  "extends": "@relayos/typescript-config/base.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src"
