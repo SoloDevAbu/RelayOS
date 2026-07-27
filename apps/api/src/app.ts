@@ -10,6 +10,7 @@ import helmetPlugin from "./plugins/helmet.js";
 import rateLimitPlugin from "./plugins/rate-limit.js";
 import sensiblePlugin from "./plugins/sensible.js";
 import errorHandlerPlugin from "./plugins/error-handler.js";
+import swaggerPlugin from "./plugins/swagger.js";
 
 // Routes
 import routes from "./routes/index.js";
@@ -45,6 +46,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(corsPlugin);
   await app.register(helmetPlugin);
   await app.register(sensiblePlugin);
+  await app.register(swaggerPlugin);
   await app.register(rateLimitPlugin);
   await app.register(jwtPlugin);
   await app.register(errorHandlerPlugin);

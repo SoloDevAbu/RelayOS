@@ -18,6 +18,8 @@
     "@fastify/jwt": "^9.1.0",
     "@fastify/rate-limit": "^10.3.0",
     "@fastify/sensible": "^6.0.4",
+    "@fastify/swagger": "^9.8.1",
+    "@fastify/swagger-ui": "^5.2.6",
     "@fastify/type-provider-typebox": "^5.2.0",
     "@node-rs/argon2": "^2.0.2",
     "@relayos/db": "workspace:*",
