@@ -1,0 +1,20 @@
+{
+  "name": "@relayos/api",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@relayos/db": "workspace:*",
+    "dotenv": "^17.4.2",
+    "fastify": "^5.10.0"
+  },
+  "devDependencies": {
+    "@relayos/typescript-config": "workspace:*",
+    "@types/node": "^22.15.3"
+  }
+}
