@@ -19,6 +19,17 @@ export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
+      ...(process.env.NODE_ENV !== "production"
+        ? {
+            transport: {
+              target: "pino-pretty",
+              options: {
+                translateTime: "HH:MM:ss Z",
+                ignore: "pid,hostname",
+              },
+            },
+          }
+        : {}),
       redact: [
         "req.headers.authorization",
         "req.headers['x-api-key']",
