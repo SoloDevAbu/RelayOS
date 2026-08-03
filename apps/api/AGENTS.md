@@ -28,6 +28,9 @@ apps/platform-api/src/
   services/     — business logic, one file per domain (auth.ts, projects.ts, apiKeys.ts, workflows.ts)
   schemas/      — Typebox Schema request & response validation, one file per domain
   plugins/      — Fastify plugin registration (auth middleware, error handler, etc.)
+  config/       — env validation, secrets loading which are only applicable for this app
+  lib/          — lib files which are only applicable for this app
+  constants/    — constants which are only applicable for this app
 ```
 
 A route handler should be a thin wrapper: parse/validate input → call a service function →

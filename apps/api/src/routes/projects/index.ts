@@ -12,7 +12,7 @@ import {
   getProjectSchema,
   updateProjectSchema,
   deleteProjectSchema,
-} from "./schemas.js";
+} from "../../schemas/projects.js";
 
 /**
  * Project routes

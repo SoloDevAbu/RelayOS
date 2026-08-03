@@ -7,7 +7,7 @@ import {
   signinSchema,
   refreshSchema,
   logoutSchema,
-} from "./schemas.js";
+} from "../../schemas/auth.js";
 
 /**
  * Auth routes

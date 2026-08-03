@@ -4,7 +4,7 @@ import {
   createApiKeySchema,
   listApiKeysSchema,
   revokeApiKeySchema,
-} from "./schemas.js";
+} from "../../schemas/api-keys.js";
 
 /**
  * API key routes

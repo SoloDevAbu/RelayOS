@@ -6,7 +6,7 @@ import type {
   UpdateWorkflowBodyType,
   WorkflowParamsType,
   PaginationQueryType,
-} from "./schemas.js";
+} from "../../schemas/workflows.js";
 import { DEFAULT_PAGE, DEFAULT_LIMIT } from "../../constants/index.js";
 
 interface MappedWorkflow {

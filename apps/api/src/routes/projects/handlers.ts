@@ -6,7 +6,7 @@ import type {
   CreateProjectBodyType,
   UpdateProjectBodyType,
   ProjectParamsType,
-} from "./schemas.js";
+} from "../../schemas/projects.js";
 
 /**
  * Generate a URL-safe slug from a project name.

@@ -16,7 +16,7 @@ import {
   deleteWorkflowSchema,
   activateWorkflowSchema,
   deactivateWorkflowSchema,
-} from "./schemas.js";
+} from "../../schemas/workflows.js";
 
 /**
  * Workflow routes

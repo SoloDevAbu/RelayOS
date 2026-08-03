@@ -2,7 +2,10 @@ import { randomBytes, createHash } from "node:crypto";
 import { eq, and, isNull } from "drizzle-orm";
 import { projects, apiKeys } from "@relayos/db/schema";
 import type { FastifyRequest, FastifyReply } from "fastify";
-import type { CreateApiKeyBodyType, ApiKeyParamsType } from "./schemas.js";
+import type {
+  CreateApiKeyBodyType,
+  ApiKeyParamsType,
+} from "../../schemas/api-keys.js";
 import { API_KEY_PREFIX } from "../../constants/index.js";
 
 function sha256(value: string): string {
