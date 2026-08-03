@@ -11,11 +11,9 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
   await fastify.register(fastifyRateLimit, {
     max: 100,
     timeWindow: "1 minute",
-    // Use shared Redis instance from @relayos/lib
     redis,
     nameSpace: "relayos-api-rl:",
     keyGenerator: (request: FastifyRequest) => {
-      // If authenticated, rate-limit per user; otherwise per IP
       return (request.user as { id?: string } | undefined)?.id ?? request.ip;
     },
     errorResponseBuilder: (_request, context) => ({
@@ -25,18 +23,9 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
       retryAfter: context.after,
     }),
   });
-
-  // Disable rate limiting for health endpoint via a global onRequest hook
-  fastify.addHook("onRequest", async (request, reply) => {
-    if (request.url === "/health" || request.url === "/api/v1/health") {
-      // @ts-expect-error — accessing internal rate limit context to skip
-      request.rateLimit = false;
-    }
-  });
 };
 
 export default fp(rateLimitPlugin, {
   name: "rate-limit",
   fastify: "5.x",
-  dependencies: ["config"],
 });

@@ -1,5 +1,5 @@
 import { eq, and, count } from "drizzle-orm";
-import { projects, workflows } from "@relayos/db/schema";
+import { workflows } from "@relayos/db/schema";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type {
   CreateWorkflowBodyType,
@@ -8,6 +8,7 @@ import type {
   PaginationQueryType,
 } from "../../schemas/workflows.js";
 import { DEFAULT_PAGE, DEFAULT_LIMIT } from "../../constants/index.js";
+import { assertProjectOwnership } from "../../lib/assert-project-ownership.js";
 
 interface MappedWorkflow {
   id: string;
@@ -20,27 +21,6 @@ interface MappedWorkflow {
   version: number;
   createdAt: string;
   updatedAt: string;
-}
-
-async function assertProjectOwnership(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  projectId: string,
-): Promise<boolean> {
-  const [project] = await request.server.db
-    .select({ id: projects.id })
-    .from(projects)
-    .where(
-      and(eq(projects.id, projectId), eq(projects.userId, request.user!.id)),
-    )
-    .limit(1);
-
-  if (!project) {
-    await reply.notFound("Project not found");
-    return false;
-  }
-
-  return true;
 }
 
 function mapWorkflow(w: typeof workflows.$inferSelect): MappedWorkflow {

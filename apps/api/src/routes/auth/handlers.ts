@@ -1,7 +1,8 @@
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { eq, and, gt, isNull } from "drizzle-orm";
 import { users, refreshTokens } from "@relayos/db/schema";
 import { hashPassword, verifyPassword } from "../../lib/password.js";
+import { sha256 } from "../../lib/crypto.js";
 import type { FastifyRequest, FastifyReply, FastifyInstance } from "fastify";
 import type {
   SignupBodyType,
@@ -9,10 +10,6 @@ import type {
   RefreshBodyType,
   LogoutBodyType,
 } from "../../schemas/auth.js";
-
-function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 /**
  * Create a refresh token, persist its hash in DB, return the raw token.

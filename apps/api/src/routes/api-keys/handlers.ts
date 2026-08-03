@@ -1,40 +1,14 @@
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { eq, and, isNull } from "drizzle-orm";
-import { projects, apiKeys } from "@relayos/db/schema";
+import { apiKeys } from "@relayos/db/schema";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type {
   CreateApiKeyBodyType,
   ApiKeyParamsType,
 } from "../../schemas/api-keys.js";
 import { API_KEY_PREFIX } from "../../constants/index.js";
-
-function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-/**
- * Verify the project exists and belongs to the authenticated user.
- */
-async function assertProjectOwnership(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  projectId: string,
-): Promise<boolean> {
-  const [project] = await request.server.db
-    .select({ id: projects.id })
-    .from(projects)
-    .where(
-      and(eq(projects.id, projectId), eq(projects.userId, request.user!.id)),
-    )
-    .limit(1);
-
-  if (!project) {
-    await reply.notFound("Project not found");
-    return false;
-  }
-
-  return true;
-}
+import { sha256 } from "../../lib/crypto.js";
+import { assertProjectOwnership } from "../../lib/assert-project-ownership.js";
 
 export async function createApiKey(
   request: FastifyRequest<{

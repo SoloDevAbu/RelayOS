@@ -1,8 +1,9 @@
 import { buildApp } from "./app.js";
+import type { FastifyInstance } from "fastify";
+
+let app: FastifyInstance | undefined;
 
 const start = async () => {
-  let app;
-
   try {
     app = await buildApp();
     const { PORT, HOST } = app.config;
@@ -28,9 +29,9 @@ async function shutdown(signal: string) {
   console.log(`\nReceived ${signal}, shutting down gracefully...`);
 
   try {
-    // buildApp() must have succeeded for us to be here
-    const app = await buildApp();
-    await app.close();
+    if (app) {
+      await app.close();
+    }
     console.log("Server closed");
     process.exit(0);
   } catch (err) {
