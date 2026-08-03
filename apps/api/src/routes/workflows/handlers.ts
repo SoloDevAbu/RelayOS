@@ -7,6 +7,7 @@ import type {
   WorkflowParamsType,
   PaginationQueryType,
 } from "./schemas.js";
+import { DEFAULT_PAGE, DEFAULT_LIMIT } from "../../constants/index.js";
 
 interface MappedWorkflow {
   id: string;
@@ -97,8 +98,8 @@ export async function listWorkflows(
   reply: FastifyReply,
 ) {
   const { projectId } = request.params;
-  const page = request.query.page ?? 1;
-  const limit = request.query.limit ?? 20;
+  const page = request.query.page ?? DEFAULT_PAGE;
+  const limit = request.query.limit ?? DEFAULT_LIMIT;
   const offset = (page - 1) * limit;
   const fastify = request.server;
 

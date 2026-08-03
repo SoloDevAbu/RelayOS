@@ -3,6 +3,7 @@ import { eq, and, isNull } from "drizzle-orm";
 import { projects, apiKeys } from "@relayos/db/schema";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { CreateApiKeyBodyType, ApiKeyParamsType } from "./schemas.js";
+import { API_KEY_PREFIX } from "../../constants/index.js";
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -49,9 +50,9 @@ export async function createApiKey(
   // Generate raw key — shown once to the user
   const rawKey = randomBytes(32).toString("hex"); // 64 hex chars
   const keyHash = sha256(rawKey);
-  const keyPrefix = `relay_${rawKey.slice(0, 8)}`;
+  const keyPrefix = `${API_KEY_PREFIX}${rawKey.slice(0, 8)}`;
   // Full key returned to user: relay_<rawKey>
-  const fullKey = `relay_${rawKey}`;
+  const fullKey = `${API_KEY_PREFIX}${rawKey}`;
 
   const rows = await fastify.db
     .insert(apiKeys)
