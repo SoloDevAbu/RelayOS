@@ -120,6 +120,9 @@ importers:
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
+      drizzle-orm:
+        specifier: 1.0.0-rc.4
+        version: 1.0.0-rc.4(@neondatabase/serverless@1.1.0)(@sinclair/typebox@0.34.52)(@types/pg@8.20.0)(pg@8.22.0)(zod@4.4.3)
       env-schema:
         specifier: ^6.1.0
         version: 6.1.0
