@@ -1,4 +1,5 @@
 import { Redis } from "ioredis";
+
 import { redisUrl } from "./config";
 import { logger } from "./logger";
 
@@ -60,3 +61,5 @@ export const disconnectRedis = async (): Promise<void> => {
     logger.error({ error }, "Error during Redis disconnect");
   }
 };
+
+export type RedisClient = typeof redis;
