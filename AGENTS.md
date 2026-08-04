@@ -23,7 +23,7 @@ Before writing any of the following inside an app, check `packages/` first:
 
 | If you're about to write...                                     | Check this package first |
 | --------------------------------------------------------------- | ------------------------ |
-| A Redis/ioredis client                                          | `packages/redis-client`  |
+| A Redis/ioredis client                                          | `packages/lib`           |
 | A BullMQ `Queue` or `Worker` definition                         | `packages/queue`         |
 | A Postgres/Drizzle client or schema                             | `packages/db`            |
 | A logger setup                                                  | `packages/logger`        |
