@@ -1,0 +1,31 @@
+{
+  "name": "@relayos/ingestion-service",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@fastify/cors": "^10.1.0",
+    "@fastify/rate-limit": "^10.3.0",
+    "@fastify/sensible": "^6.0.4",
+    "@fastify/type-provider-typebox": "^5.2.0",
+    "@relayos/db": "workspace:*",
+    "@relayos/lib": "workspace:*",
+    "@relayos/queue": "workspace:*",
+    "@sinclair/typebox": "^0.34.52",
+    "dotenv": "^17.4.2",
+    "env-schema": "^6.1.0",
+    "fastify": "^5.10.0",
+    "fastify-plugin": "^5.1.0"
+  },
+  "devDependencies": {
+    "@relayos/typescript-config": "workspace:*",
+    "@types/node": "^22.15.3",
+    "tsx": "^4.23.1"
+  }
+}
