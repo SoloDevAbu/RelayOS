@@ -1,7 +1,7 @@
 import fp from "fastify-plugin";
 import fastifyRateLimit from "@fastify/rate-limit";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
-import { redis } from "@relayos/lib/redis";
+import { getRedis } from "@relayos/lib/redis";
 
 /**
  * Global rate limiting — 100 requests/min per IP, backed by Redis for
@@ -11,7 +11,7 @@ const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
   await fastify.register(fastifyRateLimit, {
     max: 100,
     timeWindow: "1 minute",
-    redis,
+    redis: getRedis(),
     nameSpace: "relayos-api-rl:",
     keyGenerator: (request: FastifyRequest) => {
       return (request.user as { id?: string } | undefined)?.id ?? request.ip;

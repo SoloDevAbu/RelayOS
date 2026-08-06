@@ -33,7 +33,7 @@ speculatively create a package for a single consumer.
 ## Anti-patterns to flag
 
 - A `new Redis(...)` or `new Queue(...)` call inside an `apps/*/src/**` file instead of an
-  import from `packages/redis-client` or `packages/queue`.
+  import from `packages/lib` or `packages/queue`.
 - A locally-defined `type ExecutionStatus = ...` that duplicates (even loosely) something already
   in `packages/types`.
 - Two apps defining the same BullMQ queue name as separate string literals instead of both

@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import fastifyRateLimit from "@fastify/rate-limit";
-import { redis } from "@relayos/lib/redis";
+import { getRedis } from "@relayos/lib/redis";
 import { signup, signin, refresh, logout } from "./handlers.js";
 import {
   signupSchema,
@@ -17,7 +17,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   await fastify.register(fastifyRateLimit, {
     max: 10,
     timeWindow: "1 minute",
-    redis,
+    redis: getRedis(),
     nameSpace: "relayos-auth-rl:",
     keyGenerator: (request) => {
       // Rate limit by IP + email combo to prevent credential-stuffing

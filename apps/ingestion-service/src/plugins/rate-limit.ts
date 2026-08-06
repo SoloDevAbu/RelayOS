@@ -1,13 +1,13 @@
 import fp from "fastify-plugin";
 import fastifyRateLimit from "@fastify/rate-limit";
 import type { FastifyPluginAsync } from "fastify";
-import { redis } from "@relayos/lib/redis";
+import { getRedis } from "@relayos/lib/redis";
 
 const rateLimitPlugin: FastifyPluginAsync = async (fastify) => {
   await fastify.register(fastifyRateLimit, {
     max: 100,
     timeWindow: "1 minute",
-    redis,
+    redis: getRedis(),
     nameSpace: "relayos-ingestion-rl:",
     keyGenerator: (request) => request.ip,
     errorResponseBuilder: (_request, context) => ({
