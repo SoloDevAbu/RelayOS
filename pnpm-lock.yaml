@@ -249,9 +249,6 @@ importers:
       bullmq:
         specifier: ^5.81.2
         version: 5.81.2
-      ioredis:
-        specifier: ^5.11.1
-        version: 5.11.1
     devDependencies:
       '@relayos/typescript-config':
         specifier: workspace:*

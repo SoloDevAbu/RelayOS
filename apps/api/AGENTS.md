@@ -40,7 +40,4 @@ return the result. Business logic never lives in `routes/`.
 
 - **Unit tests**: colocated (`apiKeys.ts` + `apiKeys.test.ts`, same folder). Write one for every
   function/file that has real logic — skip trivial pass-through routes and pure plugin registration.
-- **Integration tests**: only when explicitly asked, in `apps/api/integration/`
-  (separate from `src/`), using real Postgres via Testcontainers.
-- Config: `vitest.config.ts` (unit) and `vitest.integration.config.ts` (integration, only if
-  this app has integration tests yet) at the app root.
+- Config: `vitest.config.ts` (unit) at the app root.
