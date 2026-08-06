@@ -1,13 +1,9 @@
-import { fetch, RequestInit } from "undici";
-
-/**
- * Unified error types for all outbound HTTP failures.
- */
+import { fetch, type RequestInit } from "undici";
 
 export class HttpClientError extends Error {
   public readonly statusCode?: number;
   public readonly responseBody?: string;
-  public readonly isTimeout?: boolean;
+  public readonly isTimeout: boolean;
   public readonly latencyMs: number;
 
   constructor(params: {
@@ -16,8 +12,9 @@ export class HttpClientError extends Error {
     responseBody?: string;
     isTimeout?: boolean;
     latencyMs: number;
+    cause?: unknown;
   }) {
-    super(params.message);
+    super(params.message, { cause: params.cause });
     this.name = "HttpClientError";
     this.statusCode = params.statusCode;
     this.responseBody = params.responseBody;
@@ -32,14 +29,11 @@ export interface HttpResponse {
   latencyMs: number;
 }
 
-/**
- * General purpose HTTP POST wrapper
- */
 export const post = async (
   url: string,
   body: unknown,
   headers: Record<string, string> = {},
-  timeoutMs: number = 10000,
+  timeoutMs: number = 10_000,
 ): Promise<HttpResponse> => {
   const start = Date.now();
 
@@ -57,28 +51,25 @@ export const post = async (
   try {
     const res = await fetch(url, init);
     const latencyMs = Date.now() - start;
+    const responseBody = await res.text();
 
-    const rawText = await res.text();
-    const responseBody = rawText.slice(0, 1000);
-    return {
-      statusCode: res.status,
-      responseBody,
-      latencyMs,
-    };
+    return { statusCode: res.status, responseBody, latencyMs };
   } catch (error) {
     const latencyMs = Date.now() - start;
 
     if (error instanceof DOMException && error.name === "TimeoutError") {
       throw new HttpClientError({
-        message: "Request Timed out",
+        message: "Request timed out",
         isTimeout: true,
         latencyMs,
+        cause: error,
       });
     }
 
     throw new HttpClientError({
-      message: "Unknown HTTP client error",
+      message: error instanceof Error ? error.message : "Unknown HTTP client error",
       latencyMs,
+      cause: error,
     });
   }
 };

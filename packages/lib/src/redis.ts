@@ -1,65 +1,51 @@
 import { Redis } from "ioredis";
+import { getRedisUrl } from "./config.js";
+import { logger } from "./logger.js";
 
-import { redisUrl } from "./config";
-import { logger } from "./logger";
+export type RedisClient = Redis;
 
-/**
- * Singleton instance of the Redis client
- */
+let _instance: Redis | undefined;
 
-export const redis = new Redis(redisUrl, {
-  maxRetriesPerRequest: null,
-  enableReadyCheck: true,
+function attachListeners(client: Redis): void {
+  client.on("connect", () => logger.info("Redis connected"));
+  client.on("ready", () => logger.info("Redis ready"));
+  client.on("error", (err: Error) => logger.error({ err }, "Redis error"));
+  client.on("reconnecting", () => logger.warn("Redis reconnecting"));
+  client.on("end", () => logger.info("Redis connection ended"));
+  client.on("close", () => logger.warn("Redis connection closed"));
+}
 
-  retryStrategy(times: number) {
-    const delay = Math.min(times * 50, 500);
-    return delay;
-  },
+export function createRedis(url?: string): Redis {
+  const client = new Redis(url ?? getRedisUrl(), {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: true,
+    retryStrategy: (times) => Math.min(times * 50, 500),
+    reconnectOnError: (err) => {
+      const transient = ["READONLY", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND"];
+      return transient.some((e) => err.message.includes(e));
+    },
+  });
+  attachListeners(client);
+  return client;
+}
 
-  reconnectOnError(err: Error) {
-    const targetErrors = ["READONLY", "ECONNRESET", "ETIMEDOUT", "ENOTFOUND"];
-    if (targetErrors.some((e) => err.message.includes(e))) {
-      return true;
-    }
-    return false;
-  },
-});
+export function getRedis(): Redis {
+  if (!_instance) {
+    _instance = createRedis();
+  }
+  return _instance;
+}
 
-/**
- * Event Listeners
- */
-
-redis.on("connect", () => {
-  logger.info("Redis connected");
-});
-
-redis.on("ready", () => {
-  logger.info("Redis ready");
-});
-
-redis.on("error", (err: Error) => {
-  logger.error({ err }, "Redis error");
-});
-
-redis.on("reconnecting", () => {
-  logger.warn("Redis reconnecting");
-});
-
-redis.on("end", () => {
-  logger.info("Redis connection ended");
-});
-
-redis.on("close", () => {
-  logger.warn("Redis connection closed");
-});
-
-export const disconnectRedis = async (): Promise<void> => {
+export async function disconnectRedis(): Promise<void> {
+  if (!_instance) return;
   try {
-    await redis.quit();
+    await _instance.quit();
     logger.info("Redis disconnected gracefully");
   } catch (error) {
     logger.error({ error }, "Error during Redis disconnect");
+  } finally {
+    _instance = undefined;
   }
-};
+}
 
-export type RedisClient = typeof redis;
+
