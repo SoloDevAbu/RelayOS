@@ -4,19 +4,19 @@
   "description": "",
   "exports": {
     ".": "./src/index.ts",
-    "./constant": "./src/constant.ts",
+    "./queue-names": "./src/queue-names.ts",
     "./client": "./src/client.ts"
   },
   "scripts": {
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@relayos/lib": "workspace:*",
-    "bullmq": "^5.81.2",
-    "ioredis": "^5.11.1"
+    "bullmq": "^5.81.2"
   },
   "devDependencies": {
     "@relayos/typescript-config": "workspace:*"
