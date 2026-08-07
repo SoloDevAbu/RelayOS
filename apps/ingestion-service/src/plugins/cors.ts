@@ -4,9 +4,10 @@ import type { FastifyPluginAsync } from "fastify";
 
 const corsPlugin: FastifyPluginAsync = async (fastify) => {
   await fastify.register(fastifyCors, {
-    origin: false,
+    origin: true, // Allow all origins (or configure specific origins)
     methods: ["POST", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
   });
 };
 

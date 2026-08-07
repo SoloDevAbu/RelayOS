@@ -18,11 +18,8 @@ const corsPlugin: FastifyPluginAsync = async (fastify) => {
         return callback(null, true);
       }
 
-      // Allow localhost on any port in development
-      if (
-        fastify.config.NODE_ENV === "development" &&
-        /^https?:\/\/localhost(:\d+)?$/.test(origin)
-      ) {
+      // Allow all origins in development
+      if (fastify.config.NODE_ENV === "development") {
         return callback(null, true);
       }
 

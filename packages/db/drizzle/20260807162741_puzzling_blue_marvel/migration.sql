@@ -1,0 +1,1 @@
+ALTER TABLE "api_keys" ALTER COLUMN "key_prefix" SET DATA TYPE varchar(20) USING "key_prefix"::varchar(20);

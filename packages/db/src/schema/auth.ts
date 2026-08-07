@@ -28,7 +28,7 @@ export const apiKeys = pgTable(
       .references(() => projects.id, { onDelete: "cascade" })
       .notNull(),
     keyHash: varchar("key_hash", { length: 64 }).notNull().unique(), // SHA-256 hex
-    keyPrefix: varchar("key_prefix", { length: 10 }).notNull(), // relay_xxxxxxxx
+    keyPrefix: varchar("key_prefix", { length: 20 }).notNull(), // relay_xxxxxxxx
     name: varchar("name", { length: 255 }).notNull(),
     lastUsedAt: timestamp("last_used_at"),
     revokedAt: timestamp("revoked_at"),
