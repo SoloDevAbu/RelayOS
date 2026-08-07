@@ -40,7 +40,8 @@ export async function triggerHandler(
     });
   }
 
-  const keyHash = sha256(token);
+  const rawKey = token.slice(API_KEY_PREFIX.length);
+  const keyHash = sha256(rawKey);
   const apiKeyRecord = await lookupApiKey(keyHash, db, redis);
 
   if (!apiKeyRecord) {
