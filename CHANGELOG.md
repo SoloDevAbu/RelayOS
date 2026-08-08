@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+
 - **Platform API (`apps/api`)**
   - Initialized Fastify server with `TypeBoxTypeProvider` for robust runtime validation and type inference.
   - Configured core plugins: Database, JWT authentication, CORS, Helmet (security headers), Rate Limiting, Error Handling, and Swagger/OpenAPI documentation.
@@ -42,14 +43,53 @@ All notable changes to this project will be documented in this file.
   - Implemented a unified top-level entrypoint (`src/index.ts`) acting as a process router. It dynamically imports and boots either the API server or the Worker process based on the `PROCESS_TYPE` environment variable, ensuring a clean separation of memory dependencies.
 
 ### Changed
+
 - **Workflow Service (`apps/workflow-service`)**
   - Extended `CONDITION` handler to support an `expression` config format (e.g. `"{{payload.flag}} == true"`) in addition to the existing structured `field`/`operator`/`onTrue`/`onFalse` format. Expression-mode routes via the step-level `onSuccess`/`onFailure` fields and supports `==` and `!=` comparisons with `{{payload.x}}` and `{{steps.stepId.field}}` template resolution.
   - Fixed `vi.mock` factory hoisting bug in `context-manager.test.ts` and `state-machine.test.ts` — mock variables are now declared with `vi.hoisted()` so they are available when Vitest lifts the factory to the top of the module.
 
 ### Added
+
 - **Workflow Service (`apps/workflow-service`)**
   - Implemented `TRANSFORM` step handler (`handlers/transform.ts`): evaluates a `mapping` config object, resolving `{{payload.field}}` and `{{steps.stepId.field}}` templates against the current execution context. Single-template values preserve their original type (e.g. a boolean payload field stays `boolean`); interpolated strings coerce unresolvable references to `""`.
   - Registered `TRANSFORM` in the step handler registry (`handlers/index.ts`).
   - Added full unit test suite for `handleTransform` (`handlers/transform.test.ts`): 12 tests covering static pass-through, payload and step-output template resolution, type preservation, string interpolation, multiple templates, missing references, null payload safety, and missing `mapping` config error.
   - Expanded `condition.test.ts` with a dedicated `expression format` describe block (8 new tests) covering `==`/`!=` evaluation, payload and step-output resolution, unresolvable reference fallback, and `step.onSuccess`/`step.onFailure` routing.
 
+### Added
+
+- **Queue Package (`packages/queue`)**
+  - Added `WorkflowRetryJob` interface (`executionId`, `workflowId`, `projectId`, `stepId`, `attempt`) for typed retry job payloads. `QUEUES.WORKFLOW_RETRY` was already defined; this completes the contract.
+
+- **Workflow Service (`apps/workflow-service`) — Phase 4: Retries & Failure Handling**
+  - Added `src/engine/retry-policy.ts`: a pure, side-effect-free `decideRetry(config, attempt)` function. Given a step's `maxAttempts` / `onError` config and the current attempt number, returns one of `{ action: "retry", delayMs }` (exponential backoff: `2^attempt × 1000ms`), `{ action: "skip" }`, or `{ action: "fail" }`. No I/O — fully unit-testable in isolation.
+  - Added 14 table-driven unit tests in `retry-policy.test.ts` covering every combination of attempt count, `maxAttempts`, and `onError`.
+  - Reworked the step-runner failure branch (`step-runner.ts`): on `catch`, now calls `decideRetry` and acts on the result — retry: enqueues a delayed `WorkflowRetryJob` and exits the current job cleanly; skip: transitions step `FAILED → SKIPPED` and continues to the next step; fail: returns failure (existing Phase 3 behavior).
+  - Added `startFromStepId` option to `runSteps` so the retry worker can resume mid-workflow from the specific failed step without restarting from step 0.
+  - Added `enqueueRetry` as an injected dependency on `StepRunnerDeps` to keep the queue producer testable without a live Redis connection.
+  - Updated `StepRunResult` with `retryEnqueued?: boolean` so `execution-worker` knows not to fail the execution when a retry has been scheduled.
+  - Added `src/worker/retry-worker.ts`: a second BullMQ Worker bound to `QUEUES.WORKFLOW_RETRY`. On each job it inserts a new `PENDING` step row for the retry attempt, loads the latest step rows, and calls `runSteps` with `startFromStepId`. This mirrors execution-worker's lifecycle (success → COMPLETED, fail → FAILED, another retry → exits cleanly).
+  - Wired the retry worker alongside the execution worker in `src/worker/index.ts`. Both share the same `bullmqRedis` connection; shutdown closes both concurrently.
+  - Updated `execution-worker.ts`: when `retryEnqueued === true`, exits without failing the execution and without deleting the Redis context (the retry worker will need it for the next attempt).
+  - Added `insertRetryStepRow` to `execution-service.ts` for inserting a new PENDING row per retry attempt.
+  - Added `getLatestStepRows` to `execution-service.ts` — returns one row per `stepId` at its highest `attempt` via a SQL subquery, used by the retry worker to build the correct row map.
+  - Expanded `step-runner.test.ts` with new describe blocks: retry enqueue with correct delay, exponential backoff verification, skip continuing to the next step, skip on last step resolving to success, fail exhaustion, and `startFromStepId` mid-workflow resume.
+  - Expanded `execution-worker.test.ts` with a test asserting that `retryEnqueued=true` does not transition execution to FAILED and does not clean up the context.
+
+- **Database (`packages/db`)**
+  - Changed `execution_steps` index from a non-unique `(execution_id, step_id)` index to a `UNIQUE` index on `(execution_id, step_id, attempt)`. Each retry attempt is stored as a distinct row — full retry history is visible in `execution_steps` without overwriting earlier attempts.
+  - Generated and applied migration.
+
+- **Tool Runtime (`apps/tool-runtime`)**
+  - Scaffolded minimal Fastify service on port 8080 (matching `workflow-service`'s `TOOL_RUNTIME_URL` default).
+  - Added `POST /v1/tools/:toolId/execute` route backed by an in-memory tool registry.
+  - Added `src/tools/flaky-test-tool.ts` — **test-only fixture**: an in-memory per-`executionId` call counter that throws on the first N calls (`input.failCount`) then returns success, enabling end-to-end retry path testing over real HTTP without external dependencies.
+
+### Changed
+
+- **Workflow Service (`apps/workflow-service`)**
+  - `WorkflowStep.maxRetries` renamed to `maxAttempts` (semantic: `maxAttempts: 3` = 3 total tries, not 3 retries after the first). `onError?: "FAIL" | "SKIP"` added to `WorkflowStep`.
+  - `insertExecutionSteps` now explicitly sets `attempt: 1` on every row.
+  - `ExecutionStepRow` interface extended with `attempt: number` across service, step-runner, and worker code.
+  - `runSteps` signature extended: takes `workflowId` and `projectId` (needed to populate `WorkflowRetryJob` without extra DB round-trips) and an optional `RunStepsOptions` object.
+  - State machine `STEP_TRANSITIONS` extended: `FAILED → RUNNING` (retrying) and `FAILED → SKIPPED` (exhausted, `onError=SKIP`) are now legal transitions.

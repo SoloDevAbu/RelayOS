@@ -1,6 +1,6 @@
 ---
 title: "Workflow Engine"
-description: "How RelayOS executes durable, dynamic workflows."
+description: "How RelayOS executes durable, dynamic workflows with retries and failure handling."
 ---
 
 # Workflow Engine
@@ -20,6 +20,17 @@ The service is a single codebase but deploys in two modes using the `PROCESS_TYP
 
 To guarantee atomic and safe execution, all database writes go through a rigid State Machine. The State Machine uses optimistic concurrency control at the PostgreSQL level. This ensures that even if multiple workers accidentally pick up the same execution ID, only one will successfully transition the state from `PENDING` to `RUNNING`.
 
+**Legal step transitions:**
+
+| From      | To          | When                                   |
+| --------- | ----------- | -------------------------------------- |
+| `PENDING` | `RUNNING`   | Step starts executing                  |
+| `PENDING` | `SKIPPED`   | Step bypassed before it runs           |
+| `RUNNING` | `COMPLETED` | Handler succeeded                      |
+| `RUNNING` | `FAILED`    | Handler threw — first failure recorded |
+| `FAILED`  | `RUNNING`   | New retry attempt beginning            |
+| `FAILED`  | `SKIPPED`   | Retries exhausted, `onError: "SKIP"`   |
+
 ### Context Manager
 
 Workflows are dynamic; step 2 often depends on the output of step 1.
@@ -27,28 +38,113 @@ The **Context Manager** handles this by aggregating the output of every complete
 
 ## Step Handlers
 
-The engine walks the graph of your workflow definition and delegates logic to specialized handlers. Currently supported step types include:
+The engine walks the graph of your workflow definition and delegates logic to specialized handlers. Currently supported step types:
 
 ### `TOOL_CALL`
 
-Makes an HTTP request to the external `tool-runtime` service. This is used for integrations, fetching data, or executing custom scripts.
+Makes an HTTP request to the external `tool-runtime` service. This is used for integrations, fetching data, or executing custom scripts. On failure, the retry policy determines whether to retry, skip, or fail (see [Retry & Failure Handling](#retry--failure-handling) below).
 
 ### `CONDITION`
 
-Evaluates a logical operator (e.g., `eq`, `gt`, `in`, `exists`) against a JSON path within the current Execution Context. Depending on the result, it dynamically branches the workflow by overriding the `nextStepId`.
+Evaluates a logical operator (e.g., `eq`, `gt`, `in`, `exists`) or an expression string (e.g., `"{{payload.flag}} == true"`) against the current Execution Context. Depending on the result, it dynamically branches the workflow by overriding the `nextStepId`.
 
 ### `DELAY`
 
 Pauses the workflow execution for a specified duration in milliseconds.
 
-## Developing and Testing locally
+### `TRANSFORM`
 
-Because of the dual-process architecture, you can run the service locally using the provided NPM scripts:
+Evaluates a `mapping` config object, resolving `{{payload.field}}` and `{{steps.stepId.field}}` templates against the current execution context. Produces a structured output object for downstream steps.
+
+## Retry & Failure Handling
+
+When a step handler throws, the engine consults a **retry policy** before deciding what happens next. Each step can configure this via two fields on its definition:
+
+| Field         | Type               | Default  | Description                                                                         |
+| ------------- | ------------------ | -------- | ----------------------------------------------------------------------------------- |
+| `maxAttempts` | `number`           | `1`      | Total attempts allowed (including the first). `maxAttempts: 3` = try up to 3 times. |
+| `onError`     | `"FAIL" \| "SKIP"` | `"FAIL"` | What to do when all attempts are exhausted.                                         |
+
+### Retry decisions
+
+Given a failure on attempt _N_:
+
+- **`N < maxAttempts`** → **retry**: A new delayed job is enqueued on the `workflow:retry` queue with an exponential backoff delay of `2^N × 1000ms` (attempt 1 → 2 s, attempt 2 → 4 s, attempt 3 → 8 s, …). The current job exits cleanly; the execution stays `RUNNING`.
+- **`N ≥ maxAttempts` and `onError: "SKIP"`** → **skip**: The step is transitioned to `SKIPPED` and execution continues with the next step. Downstream steps that reference this step's output will receive `null`.
+- **`N ≥ maxAttempts` and `onError: "FAIL"`** → **fail**: The step stays `FAILED` and the execution transitions to `FAILED`.
+
+### Retry durability
+
+Retries use **delayed BullMQ jobs**, not in-memory loops. This means:
+
+- If the worker process crashes between attempts, the delayed job survives in Redis and is redelivered once the delay expires.
+- Each attempt is recorded as a **separate row** in `execution_steps` (unique constraint on `(execution_id, step_id, attempt)`), giving a full audit trail.
+
+### Example step definition
+
+```json
+{
+  "id": "call-external-api",
+  "type": "TOOL_CALL",
+  "name": "Call External API",
+  "config": { "toolId": "my-tool", "input": { "url": "{{payload.url}}" } },
+  "maxAttempts": 3,
+  "onError": "SKIP"
+}
+```
+
+This step will be tried up to 3 times (with 2 s then 4 s delays). If it fails on the third attempt, it is skipped and the workflow continues.
+
+## Worker Architecture
+
+Two BullMQ Workers run inside the same `PROCESS_TYPE=worker` process, sharing a single Redis connection:
+
+| Worker             | Queue              | Responsibility                                                                            |
+| ------------------ | ------------------ | ----------------------------------------------------------------------------------------- |
+| `execution-worker` | `workflow:execute` | Picks up fresh executions, inserts step rows, runs all steps                              |
+| `retry-worker`     | `workflow:retry`   | Picks up delayed retry jobs, inserts a new step-attempt row, resumes from the failed step |
+
+Both workers shut down gracefully together on `SIGTERM`/`SIGINT`.
+
+## Tool Runtime
+
+The `tool-runtime` service (`apps/tool-runtime`) is a minimal Fastify server on **port 8080** that the engine calls for `TOOL_CALL` steps.
+
+### Endpoint
+
+```
+POST /v1/tools/:toolId/execute
+```
+
+**Body:**
+
+```json
+{ "input": { ... }, "executionId": "exec-abc" }
+```
+
+**Response (200):**
+
+```json
+{ "output": { ... } }
+```
+
+Tools are registered in an in-memory registry at startup. A `flaky-test-tool` fixture is included for testing the retry path end-to-end — see the source for usage.
+
+## Developing and Testing locally
 
 ```bash
 # Run the API server (Port 3003)
 npm run dev:api
 
-# Run the background worker
+# Run the background worker (execution + retry workers)
 npm run dev:worker
+
+# Run tool-runtime (Port 8080)
+cd apps/tool-runtime && npm run dev
+```
+
+Run unit tests:
+
+```bash
+cd apps/workflow-service && pnpm test
 ```
