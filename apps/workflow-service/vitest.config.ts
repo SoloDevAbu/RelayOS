@@ -4,7 +4,7 @@ import { baseTest } from "../../vitest.config.base";
 export default defineConfig({
   test: {
     ...baseTest,
-    name: "api:unit",
+    name: "workflow:unit",
     include: ["src/**/*.test.ts"],
   },
 });

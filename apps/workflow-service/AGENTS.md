@@ -50,3 +50,4 @@ writes to it.
 
 - **Unit tests**: colocated. Every function in `engine/` and `services/` gets one — this is the
   core of the platform, don't skip coverage here even for "obvious" functions.
+- Config: `vitest.config.ts` (unit) at the app root.
