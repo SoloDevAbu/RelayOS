@@ -28,7 +28,7 @@ const schema = Type.Object({
   ),
   DATABASE_URL: Type.String(),
   REDIS_URL: Type.String({ default: "redis://localhost:6379" }),
-  TOOL_RUNTIME_URL: Type.String({ default: "http://localhost:3004" }),
+  TOOL_RUNTIME_URL: Type.String({ default: "http://localhost:8080" }),
   WORKER_CONCURRENCY: Type.Number({ default: 5 }),
 });
 

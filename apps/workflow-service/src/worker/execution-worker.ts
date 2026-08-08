@@ -1,5 +1,7 @@
 import type { Job } from "bullmq";
-import type { WorkflowExecuteJob } from "@relayos/queue";
+import { Queue } from "bullmq";
+import type { WorkflowExecuteJob, WorkflowRetryJob } from "@relayos/queue";
+import { QUEUES, bullmqRedis } from "@relayos/queue";
 import { createLogger } from "@relayos/lib/logger";
 import {
   getExecution,
@@ -14,10 +16,18 @@ import {
 import { getContext, updateContext, deleteContext } from "../engine/context-manager.js";
 import { runSteps } from "../engine/step-runner.js";
 
+const retryQueue = new Queue<WorkflowRetryJob>(QUEUES.WORKFLOW_RETRY, {
+  connection: bullmqRedis,
+});
+
+async function enqueueRetry(job: WorkflowRetryJob, delayMs: number): Promise<void> {
+  await retryQueue.add("retry", job, { delay: delayMs });
+}
+
 export async function processExecution(
   job: Job<WorkflowExecuteJob>,
 ): Promise<void> {
-  const { executionId, workflowId } = job.data;
+  const { executionId, workflowId, projectId } = job.data;
   const log = createLogger({
     executionId,
     workflowId,
@@ -65,16 +75,34 @@ export async function processExecution(
     throw error;
   }
 
+  let contextCleaned = false;
+
   try {
     log.info("Inserting execution step rows");
     const stepRows = await insertExecutionSteps(executionId, definition);
 
     log.info({ stepCount: stepRows.length }, "Running steps");
-    const result = await runSteps(executionId, definition, stepRows, {
-      transitionStep,
-      getContext,
-      updateContext,
-    });
+    const result = await runSteps(
+      executionId,
+      workflowId,
+      projectId,
+      definition,
+      stepRows,
+      {
+        transitionStep,
+        getContext,
+        updateContext,
+        enqueueRetry,
+      },
+    );
+
+    if (result.retryEnqueued) {
+      log.info(
+        { completedSteps: result.completedSteps },
+        "Step enqueued for retry — execution remains RUNNING",
+      );
+      return;
+    }
 
     if (result.success) {
       log.info(
@@ -107,8 +135,10 @@ export async function processExecution(
       log.error({ err: transitionError }, "Failed to transition execution to FAILED after crash");
     }
   } finally {
-    await deleteContext(executionId).catch((err) => {
-      log.warn({ err }, "Failed to clean up execution context from Redis");
-    });
+    if (!contextCleaned) {
+      await deleteContext(executionId).catch((err) => {
+        log.warn({ err }, "Failed to clean up execution context from Redis");
+      });
+    }
   }
 }

@@ -52,6 +52,14 @@ vi.mock("@relayos/lib/logger", () => ({
   }),
 }));
 
+vi.mock("@relayos/queue", () => ({
+  QUEUES: { WORKFLOW_EXECUTE: "workflow-execute", WORKFLOW_RETRY: "workflow-retry" },
+  bullmqRedis: {},
+  Queue: class {
+    add = vi.fn().mockResolvedValue(undefined);
+  },
+}));
+
 function makeJob(data: Partial<WorkflowExecuteJob> = {}): Job<WorkflowExecuteJob> {
   return {
     id: "job-1",
@@ -83,7 +91,7 @@ describe("processExecution", () => {
     });
     mockGetWorkflowDefinition.mockResolvedValue(sampleDefinition);
     mockInsertExecutionSteps.mockResolvedValue([
-      { id: "row-1", executionId: "exec-1", stepId: "s1", stepType: "DELAY", status: "PENDING" },
+      { id: "row-1", executionId: "exec-1", stepId: "s1", stepType: "DELAY", status: "PENDING", attempt: 1 },
     ]);
     mockRunSteps.mockResolvedValue({ success: true, completedSteps: ["s1"] });
 
@@ -98,6 +106,30 @@ describe("processExecution", () => {
       expect.objectContaining({ completedAt: expect.any(Date) }),
     );
     expect(mockDeleteContext).toHaveBeenCalledWith("exec-1");
+  });
+
+  it("does not fail execution and does not delete context when retry is enqueued", async () => {
+    mockGetExecution.mockResolvedValue({
+      id: "exec-1",
+      workflowId: "wf-1",
+      status: "PENDING",
+    });
+    mockGetWorkflowDefinition.mockResolvedValue(sampleDefinition);
+    mockInsertExecutionSteps.mockResolvedValue([
+      { id: "row-1", executionId: "exec-1", stepId: "s1", stepType: "DELAY", status: "PENDING", attempt: 1 },
+    ]);
+    mockRunSteps.mockResolvedValue({ success: false, completedSteps: [], retryEnqueued: true });
+
+    await processExecution(makeJob());
+
+    expect(mockTransitionExecution).not.toHaveBeenCalledWith(
+      "exec-1", "RUNNING", "FAILED",
+      expect.anything(),
+    );
+    expect(mockTransitionExecution).not.toHaveBeenCalledWith(
+      "exec-1", "RUNNING", "COMPLETED",
+      expect.anything(),
+    );
   });
 
   it("skips when execution not found", async () => {
@@ -141,7 +173,7 @@ describe("processExecution", () => {
     );
   });
 
-  it("transitions to FAILED on step failure", async () => {
+  it("transitions to FAILED on step failure (onError=FAIL, exhausted)", async () => {
     mockGetExecution.mockResolvedValue({
       id: "exec-1",
       workflowId: "wf-1",
@@ -149,7 +181,7 @@ describe("processExecution", () => {
     });
     mockGetWorkflowDefinition.mockResolvedValue(sampleDefinition);
     mockInsertExecutionSteps.mockResolvedValue([
-      { id: "row-1", executionId: "exec-1", stepId: "s1", stepType: "DELAY", status: "PENDING" },
+      { id: "row-1", executionId: "exec-1", stepId: "s1", stepType: "DELAY", status: "PENDING", attempt: 1 },
     ]);
     mockRunSteps.mockResolvedValue({
       success: false,
