@@ -9,6 +9,7 @@ import {
   jsonb,
   boolean,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { projects } from "./auth";
 
@@ -118,9 +119,10 @@ export const executionSteps = pgTable(
   },
   (t) => ({
     executionIdx: index("idx_execution_steps_execution_id").on(t.executionId),
-    executionStepIdIdx: index("idx_execution_steps_step_id").on(
+    executionStepAttemptIdx: uniqueIndex("idx_execution_steps_step_attempt").on(
       t.executionId,
       t.stepId,
+      t.attempt,
     ),
   }),
 );
