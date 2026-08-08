@@ -1,159 +1,58 @@
-# Turborepo starter
+# RelayOS
 
-This Turborepo starter is maintained by the Turborepo core team.
+RelayOS is a durable AI-agent workflow execution platform built with TypeScript. It relies on a Temporal-style durability model coupled with an LLM-driven planning system, all organized in a Turborepo monorepo.
 
-## Using this example
+## Getting Started
 
-Run the following command:
+To get started with running and developing RelayOS locally, please refer to the [Setup Guide (SETUP.md)](SETUP.md).
 
-```sh
-npx create-turbo@latest
-```
+## Current Project Status
 
-## What's inside?
+RelayOS is being built in distinct phases. We are currently up to **Phase 4** of the build plan.
 
-This Turborepo includes the following packages/apps:
+### Completed Phases
 
-### Apps and Packages
+- **Phase 1: Platform Data Plane (Auth, Projects, Workflows)**
+  - Fully implemented `apps/api`.
+  - JWT Session-based Auth, Project CRUD, Workflow definitions.
+  - API Key provisioning (SHA-256 hashed storage).
+- **Phase 2: Ingestion Service**
+  - Fully implemented `apps/ingestion-service`.
+  - Scalable and stateless endpoint for external workflow triggers.
+  - Validates API Keys and enqueues to `workflow:execute` BullMQ queues.
+- **Phase 3: Core Workflow Execution Engine**
+  - Fully implemented `apps/workflow-service` execution mechanics.
+  - Robust PostgreSQL-backed State Machine utilizing optimistic concurrency.
+  - Redis-backed Context Manager for high-performance variable resolution across steps.
+  - Deterministic steps implemented: `TOOL_CALL`, `CONDITION`, `DELAY`, and `TRANSFORM`.
+- **Phase 4: Retries & Failure Handling**
+  - Built resilient delayed-job retries.
+  - Granular step retry tracking via `attempt` limits and exponential backoff configuration.
+  - `workflow:retry` BullMQ queue processing for resuming directly from the failed step.
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+### Upcoming Goals (Future Phases)
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+- **[Phase 5] Human Approval Gate:** Unbounded pause & resume mechanism. Wait indefinitely for external HTTP approvals without holding memory.
+- **[Phase 6] Scheduled Triggers:** Cron-based scheduling worker for recurring workflow triggers.
+- **[Phase 7] Agent Service:** Stateless AI planner (LLM-driven) serving as a pure function: `input -> next action`.
+- **[Phase 8] Agent Loop Execution:** Wiring the `AI_PLAN` step type into the core engine using the Agent Service, enabling dynamic tool utilization.
+- **[Phase 9] Memory Service (RAG):** Adding short-lived execution memory and long-term knowledge memory using `pgvector` for OpenAI embeddings.
+- **[Phase 10] Harden Tool Runtime:** Full schema validation, robust error capture, and timeout enforcement in `apps/tool-runtime`.
+- **[Phase 11] SDK Package:** Publishing `@repo/sdk` for easier programmatic interaction with RelayOS.
+- **[Phase 12] Dashboard:** Next.js frontend wrapping Platform API features.
+- **[Phase 13] Scalability:** Multi-replica deployments, load testing, and database index tuning.
+- **[Phase 14] Observability:** Full cross-service tracing via Langfuse, structured Pino logging, and correlated request IDs.
 
-### Utilities
+## Architecture Map
 
-This Turborepo has some additional tools already setup for you:
+This monorepo manages several specialized microservices to cleanly separate state, logic, and IO.
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo build
-pnpm dlx turbo build
-pnpm exec turbo build
-```
-
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo build --filter=docs
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-```
-
-### Develop
-
-To develop all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo dev
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo dev
-pnpm exec turbo dev
-pnpm exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-pnpm exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-pnpm exec turbo link
-pnpm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+| App / Package            | Responsibility                                      | Stack                  |
+| ------------------------ | --------------------------------------------------- | ---------------------- |
+| `apps/platform-api`      | Auth, projects, API keys, workflow CRUD             | Fastify, Drizzle       |
+| `apps/ingestion-service` | High throughput trigger queue endpoint              | Fastify, BullMQ        |
+| `apps/workflow-service`  | Execution engine (state machine, step runner)       | Fastify, BullMQ Worker |
+| `apps/tool-runtime`      | Local tool registry and executor                    | Fastify                |
+| `packages/db`            | Database schema and Drizzle ORM client              | TypeScript             |
+| `packages/queue`         | BullMQ queue interfaces and generic payload types   | TypeScript             |
+| `packages/lib`           | Shared utilities (Pino loggers, redis clients, etc) | TypeScript             |
