@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { handleToolCall, ToolCallError, ToolRuntimeUnreachableError } from "./tool-call.js";
+import {
+  handleToolCall,
+  ToolCallError,
+  ToolRuntimeUnreachableError,
+} from "./tool-call.js";
 import type { WorkflowStep } from "../../types/workflow-definition.js";
 import type { ExecutionContext } from "../../types/execution-context.js";
 
@@ -37,7 +41,6 @@ vi.mock("@relayos/lib/http-client", () => ({
   HttpClientError: MockHttpClientError,
 }));
 
-
 const baseStep: WorkflowStep = {
   id: "step-1",
   type: "TOOL_CALL",
@@ -56,7 +59,7 @@ const baseContext: ExecutionContext = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env.TOOL_RUNTIME_URL = "http://tool-runtime:3004";
+  process.env.TOOL_RUNTIME_URL = "http://localhost:8080";
 });
 
 describe("handleToolCall", () => {
@@ -71,7 +74,7 @@ describe("handleToolCall", () => {
 
     expect(result.output).toEqual({ result: "success" });
     expect(mockPost).toHaveBeenCalledWith(
-      "http://tool-runtime:3004/v1/tools/tool-abc/execute",
+      "http://localhost:8080/v1/tools/tool-abc/execute",
       { input: { query: "test" }, executionId: "exec-1" },
     );
   });
@@ -83,7 +86,9 @@ describe("handleToolCall", () => {
       latencyMs: 30,
     });
 
-    await expect(handleToolCall(baseStep, baseContext)).rejects.toThrow(ToolCallError);
+    await expect(handleToolCall(baseStep, baseContext)).rejects.toThrow(
+      ToolCallError,
+    );
 
     try {
       await handleToolCall(baseStep, baseContext);
@@ -114,7 +119,9 @@ describe("handleToolCall", () => {
       config: { input: { query: "test" } },
     };
 
-    await expect(handleToolCall(badStep, baseContext)).rejects.toThrow(ToolCallError);
+    await expect(handleToolCall(badStep, baseContext)).rejects.toThrow(
+      ToolCallError,
+    );
     expect(mockPost).not.toHaveBeenCalled();
   });
 
@@ -124,7 +131,9 @@ describe("handleToolCall", () => {
       config: { toolId: "tool-abc" },
     };
 
-    await expect(handleToolCall(badStep, baseContext)).rejects.toThrow(ToolCallError);
+    await expect(handleToolCall(badStep, baseContext)).rejects.toThrow(
+      ToolCallError,
+    );
     expect(mockPost).not.toHaveBeenCalled();
   });
 });

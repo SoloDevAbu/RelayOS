@@ -159,6 +159,34 @@ describe("transitionStep", () => {
     );
   });
 
+  it("transitions FAILED → RUNNING (retry — new attempt starting)", async () => {
+    mockReturning.mockResolvedValue([{ id: "step-1" }]);
+
+    await transitionStep("step-1", "FAILED", "RUNNING", {
+      startedAt: new Date("2026-01-01"),
+    });
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "RUNNING" }),
+    );
+  });
+
+  it("transitions FAILED → SKIPPED (exhausted, onError=SKIP)", async () => {
+    mockReturning.mockResolvedValue([{ id: "step-1" }]);
+
+    await transitionStep("step-1", "FAILED", "SKIPPED");
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "SKIPPED" }),
+    );
+  });
+
+  it("rejects invalid transition FAILED → COMPLETED", async () => {
+    await expect(
+      transitionStep("step-1", "FAILED", "COMPLETED"),
+    ).rejects.toThrow(InvalidTransitionError);
+  });
+
   it("rejects invalid transition PENDING → COMPLETED", async () => {
     await expect(
       transitionStep("step-1", "PENDING", "COMPLETED"),
@@ -179,3 +207,4 @@ describe("transitionStep", () => {
     ).rejects.toThrow(InvalidTransitionError);
   });
 });
+

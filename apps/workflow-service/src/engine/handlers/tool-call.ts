@@ -26,13 +26,16 @@ interface ToolCallConfig {
 }
 
 function getToolRuntimeUrl(): string {
-  return process.env.TOOL_RUNTIME_URL ?? "http://localhost:3004";
+  return process.env.TOOL_RUNTIME_URL ?? "http://localhost:8080";
 }
 
 function validateConfig(config: Record<string, unknown>): ToolCallConfig {
   const { toolId, input } = config as Partial<ToolCallConfig>;
   if (!toolId || typeof toolId !== "string") {
-    throw new ToolCallError("Missing or invalid toolId in step config", "unknown");
+    throw new ToolCallError(
+      "Missing or invalid toolId in step config",
+      "unknown",
+    );
   }
   if (!input || typeof input !== "object") {
     throw new ToolCallError("Missing or invalid input in step config", toolId);
@@ -77,7 +80,9 @@ export const handleToolCall: StepHandler = async (
     }
 
     throw new ToolRuntimeUnreachableError(
-      error instanceof Error ? error.message : "Unknown error calling tool runtime",
+      error instanceof Error
+        ? error.message
+        : "Unknown error calling tool runtime",
       { cause: error },
     );
   }

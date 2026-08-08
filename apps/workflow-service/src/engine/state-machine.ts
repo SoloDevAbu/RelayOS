@@ -27,7 +27,9 @@ const EXECUTION_TRANSITIONS: Record<string, ExecutionStatus[]> = {
 const STEP_TRANSITIONS: Record<string, StepStatus[]> = {
   PENDING: ["RUNNING", "SKIPPED"],
   RUNNING: ["COMPLETED", "FAILED"],
+  FAILED: ["RUNNING", "SKIPPED"],
 };
+
 
 export class InvalidTransitionError extends Error {
   constructor(

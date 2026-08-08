@@ -1,6 +1,6 @@
 import { db } from "@relayos/db/client";
 import { executions, executionSteps, workflows } from "@relayos/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import type { WorkflowDefinition } from "../types/workflow-definition.js";
 
 export interface ExecutionRow {
@@ -19,6 +19,7 @@ export interface ExecutionStepRow {
   stepId: string;
   stepType: string;
   status: string;
+  attempt: number;
 }
 
 export async function getExecution(
@@ -66,6 +67,7 @@ export async function insertExecutionSteps(
     stepId: step.id,
     stepType: step.type,
     status: "PENDING" as const,
+    attempt: 1,
   }));
 
   const rows = await db
@@ -77,9 +79,71 @@ export async function insertExecutionSteps(
       stepId: executionSteps.stepId,
       stepType: executionSteps.stepType,
       status: executionSteps.status,
+      attempt: executionSteps.attempt,
     });
 
   return rows;
+}
+
+export async function insertRetryStepRow(
+  executionId: string,
+  stepId: string,
+  stepType: string,
+  attempt: number,
+): Promise<ExecutionStepRow> {
+  const [row] = await db
+    .insert(executionSteps)
+    .values({
+      executionId,
+      stepId,
+      stepType: stepType as "AI_PLAN" | "TOOL_CALL" | "APPROVAL" | "CONDITION" | "TRANSFORM" | "DELAY",
+      status: "PENDING",
+      attempt,
+    })
+    .returning({
+      id: executionSteps.id,
+      executionId: executionSteps.executionId,
+      stepId: executionSteps.stepId,
+      stepType: executionSteps.stepType,
+      status: executionSteps.status,
+      attempt: executionSteps.attempt,
+    });
+
+  if (!row) {
+    throw new Error(`Failed to insert retry step row for ${stepId} attempt ${attempt}`);
+  }
+
+  return row;
+}
+
+export async function getLatestStepRows(
+  executionId: string,
+): Promise<ExecutionStepRow[]> {
+  const latestAttemptSubq = db
+    .select({
+      stepId: executionSteps.stepId,
+      maxAttempt: sql<number>`max(${executionSteps.attempt})`.as("max_attempt"),
+    })
+    .from(executionSteps)
+    .where(eq(executionSteps.executionId, executionId))
+    .groupBy(executionSteps.stepId)
+    .as("latest");
+
+  return db
+    .select({
+      id: executionSteps.id,
+      executionId: executionSteps.executionId,
+      stepId: executionSteps.stepId,
+      stepType: executionSteps.stepType,
+      status: executionSteps.status,
+      attempt: executionSteps.attempt,
+    })
+    .from(executionSteps)
+    .innerJoin(
+      latestAttemptSubq,
+      sql`${executionSteps.stepId} = ${latestAttemptSubq.stepId} and ${executionSteps.attempt} = ${latestAttemptSubq.maxAttempt}`,
+    )
+    .where(eq(executionSteps.executionId, executionId));
 }
 
 export async function getExecutionSteps(
@@ -92,7 +156,9 @@ export async function getExecutionSteps(
       stepId: executionSteps.stepId,
       stepType: executionSteps.stepType,
       status: executionSteps.status,
+      attempt: executionSteps.attempt,
     })
     .from(executionSteps)
-    .where(eq(executionSteps.executionId, executionId));
+    .where(eq(executionSteps.executionId, executionId))
+    .orderBy(desc(executionSteps.attempt));
 }

@@ -1,6 +1,8 @@
 import type { WorkflowDefinition, WorkflowStep } from "../types/workflow-definition.js";
 import type { StepOutput } from "../types/execution-context.js";
+import type { WorkflowRetryJob } from "@relayos/queue";
 import { stepHandlers } from "./handlers/index.js";
+import { decideRetry } from "./retry-policy.js";
 import type { transitionStep as TransitionStepFn } from "./state-machine.js";
 import type { getContext as GetContextFn, updateContext as UpdateContextFn } from "./context-manager.js";
 
@@ -8,6 +10,7 @@ export interface StepRunnerDeps {
   transitionStep: typeof TransitionStepFn;
   getContext: typeof GetContextFn;
   updateContext: typeof UpdateContextFn;
+  enqueueRetry: (job: WorkflowRetryJob, delayMs: number) => Promise<void>;
 }
 
 export interface ExecutionStepRow {
@@ -16,6 +19,11 @@ export interface ExecutionStepRow {
   stepId: string;
   stepType: string;
   status: string;
+  attempt: number;
+}
+
+export interface RunStepsOptions {
+  startFromStepId?: string;
 }
 
 export interface StepRunResult {
@@ -23,13 +31,17 @@ export interface StepRunResult {
   completedSteps: string[];
   failedStepId?: string;
   error?: string;
+  retryEnqueued?: boolean;
 }
 
 export async function runSteps(
   executionId: string,
+  workflowId: string,
+  projectId: string,
   definition: WorkflowDefinition,
   executionStepRows: ExecutionStepRow[],
   deps: StepRunnerDeps,
+  options: RunStepsOptions = {},
 ): Promise<StepRunResult> {
   const stepMap = new Map<string, WorkflowStep>();
   for (const step of definition.steps) {
@@ -43,8 +55,19 @@ export async function runSteps(
 
   const completedSteps: string[] = [];
   let currentStepId: string | undefined = definition.initialStepId;
+  let skipUntilReached = options.startFromStepId !== undefined;
 
   while (currentStepId) {
+    if (skipUntilReached) {
+      if (currentStepId === options.startFromStepId) {
+        skipUntilReached = false;
+      } else {
+        const step = stepMap.get(currentStepId);
+        currentStepId = step?.onSuccess;
+        continue;
+      }
+    }
+
     const step = stepMap.get(currentStepId);
     if (!step) {
       return {
@@ -111,6 +134,41 @@ export async function runSteps(
         error: errorMessage,
         completedAt: new Date(),
       });
+
+      const decision = decideRetry(
+        {
+          maxAttempts: step.maxAttempts ?? 1,
+          onError: step.onError ?? "FAIL",
+        },
+        row.attempt,
+      );
+
+      if (decision.action === "retry") {
+        await deps.enqueueRetry(
+          {
+            executionId,
+            workflowId,
+            projectId,
+            stepId: step.id,
+            attempt: row.attempt + 1,
+          },
+          decision.delayMs,
+        );
+
+        return { success: false, completedSteps, retryEnqueued: true };
+      }
+
+      if (decision.action === "skip") {
+        await deps.transitionStep(row.id, "FAILED", "SKIPPED");
+
+        if (step.onSuccess) {
+          currentStepId = step.onSuccess;
+          continue;
+        }
+
+        currentStepId = undefined;
+        continue;
+      }
 
       return {
         success: false,

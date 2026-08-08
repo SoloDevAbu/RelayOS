@@ -13,7 +13,8 @@ export interface WorkflowStep {
   config: Record<string, unknown>;
   onSuccess?: string;
   onFailure?: string;
-  maxRetries?: number;
+  maxAttempts?: number;
+  onError?: "FAIL" | "SKIP";
 }
 
 export interface WorkflowDefinition {
