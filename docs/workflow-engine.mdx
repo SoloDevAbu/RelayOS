@@ -1,0 +1,54 @@
+---
+title: "Workflow Engine"
+description: "How RelayOS executes durable, dynamic workflows."
+---
+
+# Workflow Engine
+
+The Workflow Engine (`apps/workflow-service`) is the core execution heart of RelayOS. It acts as an asynchronous background worker that processes jobs dispatched by the [Ingestion Service](/docs/ingestion) and reliably executes workflow definitions step-by-step.
+
+## Core Concepts
+
+### Process Routing
+
+The service is a single codebase but deploys in two modes using the `PROCESS_TYPE` environment variable:
+
+- `PROCESS_TYPE=worker`: Subscribes to the BullMQ Redis queues, pulling pending executions and running them.
+- `PROCESS_TYPE=api`: Exposes a Fastify web server for internal health checks (`/health`) and future administrative endpoints.
+
+### State Machine
+
+To guarantee atomic and safe execution, all database writes go through a rigid State Machine. The State Machine uses optimistic concurrency control at the PostgreSQL level. This ensures that even if multiple workers accidentally pick up the same execution ID, only one will successfully transition the state from `PENDING` to `RUNNING`.
+
+### Context Manager
+
+Workflows are dynamic; step 2 often depends on the output of step 1.
+The **Context Manager** handles this by aggregating the output of every completed step into a single JSON object. To guarantee high performance, this context is **hot-cached in Redis** during the execution lifecycle. If a worker crashes and a job is retried, the context manager gracefully rebuilds the state from PostgreSQL and re-warms the Redis cache.
+
+## Step Handlers
+
+The engine walks the graph of your workflow definition and delegates logic to specialized handlers. Currently supported step types include:
+
+### `TOOL_CALL`
+
+Makes an HTTP request to the external `tool-runtime` service. This is used for integrations, fetching data, or executing custom scripts.
+
+### `CONDITION`
+
+Evaluates a logical operator (e.g., `eq`, `gt`, `in`, `exists`) against a JSON path within the current Execution Context. Depending on the result, it dynamically branches the workflow by overriding the `nextStepId`.
+
+### `DELAY`
+
+Pauses the workflow execution for a specified duration in milliseconds.
+
+## Developing and Testing locally
+
+Because of the dual-process architecture, you can run the service locally using the provided NPM scripts:
+
+```bash
+# Run the API server (Port 3003)
+npm run dev:api
+
+# Run the background worker
+npm run dev:worker
+```

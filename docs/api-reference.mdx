@@ -1,0 +1,34 @@
+---
+title: "Platform API Reference"
+description: "Core API endpoints for managing RelayOS resources."
+---
+
+# Platform API
+
+The RelayOS Platform API provides comprehensive programmatic access to manage your organization, projects, API keys, and workflow definitions. It powers the RelayOS Dashboard and can be used to automate administrative tasks.
+
+## Base URL
+
+All requests to the Platform API should be prefixed with `/api/v1`.
+
+```bash
+https://api.relayos.com/api/v1
+```
+
+## Authentication
+
+The Platform API uses JSON Web Tokens (JWT) for user authentication and session management.
+Provide your JWT in the `Authorization` header:
+
+```http
+Authorization: Bearer <your_jwt_token>
+```
+
+## Core Resources
+
+- **Auth (`/auth`)**: Login, registration, and token refresh endpoints.
+- **Projects (`/projects`)**: Create and manage organizational projects.
+- **Workflows (`/workflows`)**: Define, update, and retrieve workflow configurations and schemas.
+- **API Keys (`/api-keys`)**: Generate and revoke API keys used for authenticating with the Ingestion Service.
+
+> **Note:** For triggering workflow executions, use the [Ingestion Service](/docs/ingestion).

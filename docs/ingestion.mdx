@@ -1,0 +1,56 @@
+---
+title: "Ingestion Service"
+description: "Triggering workflows reliably and securely."
+---
+
+# Ingestion Service
+
+The Ingestion Service is a highly scalable, isolated endpoint dedicated solely to accepting external workflow triggers. By separating this from the main Platform API, RelayOS ensures that high volumes of incoming events do not disrupt standard API operations or dashboard responsiveness.
+
+## Base URL
+
+The Ingestion Service operates under the `/v1` prefix.
+
+```bash
+https://ingest.relayos.com/v1
+```
+
+## Authentication
+
+Unlike the Platform API which uses JWTs, the Ingestion Service uses long-lived **API Keys**.
+API Keys are tied to specific projects and must be passed via the `x-api-key` header.
+
+```http
+x-api-key: relay_1234567890abcdef
+```
+
+## Triggering a Workflow
+
+### `POST /v1/trigger/:workflowId`
+
+This endpoint accepts a payload, validates your API key, and enqueues the job for execution by the RelayOS Workflow Engine.
+
+#### Request Body
+
+The request body should contain the data required by your workflow.
+_Note: Payload size is strictly limited to 1MB._
+
+```json
+{
+  "event": "user.signup",
+  "data": {
+    "userId": "usr_987",
+    "email": "user@example.com"
+  }
+}
+```
+
+#### Architecture
+
+When you trigger a workflow, the Ingestion Service performs the following:
+
+1. **Lookup**: Validates the `x-api-key` against the database.
+2. **Enqueue**: Pushes the job to a Redis-backed BullMQ queue.
+3. **Acknowledge**: Returns a `202 Accepted` response with an execution ID, immediately freeing up the connection.
+
+This asynchronous model ensures your application is never blocked waiting for a workflow to finish executing.
