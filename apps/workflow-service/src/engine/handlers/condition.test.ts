@@ -12,9 +12,24 @@ function makeStep(config: Record<string, unknown>): WorkflowStep {
   };
 }
 
+function makeExpressionStep(
+  expression: string,
+  onSuccess?: string,
+  onFailure?: string,
+): WorkflowStep {
+  return {
+    id: "cond-expr",
+    type: "CONDITION",
+    name: "Expression check",
+    config: { expression },
+    onSuccess,
+    onFailure,
+  };
+}
+
 const baseContext: ExecutionContext = {
   executionId: "exec-1",
-  triggerPayload: { env: "production" },
+  triggerPayload: { env: "production", shouldSendWelcomeEmail: true },
   steps: [
     {
       stepId: "step-1",
@@ -42,7 +57,7 @@ describe("getNestedValue", () => {
   });
 });
 
-describe("handleCondition", () => {
+describe("handleCondition — structured format", () => {
   it("returns onTrue when eq matches", async () => {
     const step = makeStep({
       field: "steps.0.output.status",
@@ -181,5 +196,110 @@ describe("handleCondition", () => {
     await expect(handleCondition(step, baseContext)).rejects.toThrow(
       "Condition step requires field, operator, onTrue, and onFalse",
     );
+  });
+});
+
+describe("handleCondition — expression format", () => {
+  it("routes to onSuccess when payload boolean is true via == true", async () => {
+    const step = makeExpressionStep(
+      "{{payload.shouldSendWelcomeEmail}} == true",
+      "step-welcome",
+      "step-skip",
+    );
+
+    const result = await handleCondition(step, baseContext);
+
+    expect((result.output as Record<string, unknown>).conditionMet).toBe(true);
+    expect(result.nextStepId).toBe("step-welcome");
+  });
+
+  it("routes to onFailure when payload boolean is false via == true", async () => {
+    const ctx: ExecutionContext = {
+      ...baseContext,
+      triggerPayload: { shouldSendWelcomeEmail: false },
+    };
+    const step = makeExpressionStep(
+      "{{payload.shouldSendWelcomeEmail}} == true",
+      "step-welcome",
+      "step-skip",
+    );
+
+    const result = await handleCondition(step, ctx);
+
+    expect((result.output as Record<string, unknown>).conditionMet).toBe(false);
+    expect(result.nextStepId).toBe("step-skip");
+  });
+
+  it("evaluates == against a string payload value", async () => {
+    const step = makeExpressionStep(
+      "{{payload.env}} == production",
+      "step-prod",
+      "step-other",
+    );
+
+    const result = await handleCondition(step, baseContext);
+
+    expect((result.output as Record<string, unknown>).conditionMet).toBe(true);
+    expect(result.nextStepId).toBe("step-prod");
+  });
+
+  it("evaluates != operator correctly", async () => {
+    const step = makeExpressionStep(
+      "{{payload.env}} != staging",
+      "step-not-staging",
+      "step-staging",
+    );
+
+    const result = await handleCondition(step, baseContext);
+
+    expect((result.output as Record<string, unknown>).conditionMet).toBe(true);
+    expect(result.nextStepId).toBe("step-not-staging");
+  });
+
+  it("resolves step output values in expression", async () => {
+    const step = makeExpressionStep(
+      "{{steps.step-1.status}} == ok",
+      "step-ok",
+      "step-fail",
+    );
+
+    const result = await handleCondition(step, baseContext);
+
+    expect((result.output as Record<string, unknown>).conditionMet).toBe(true);
+    expect(result.nextStepId).toBe("step-ok");
+  });
+
+  it("returns false for unresolved template (missing payload key)", async () => {
+    const step = makeExpressionStep(
+      "{{payload.nonexistent}} == true",
+      "step-a",
+      "step-b",
+    );
+
+    const result = await handleCondition(step, baseContext);
+
+    expect((result.output as Record<string, unknown>).conditionMet).toBe(false);
+    expect(result.nextStepId).toBe("step-b");
+  });
+
+  it("uses step.onSuccess and step.onFailure for routing (not config fields)", async () => {
+    const step = makeExpressionStep(
+      "{{payload.env}} == production",
+      "correct-success",
+      "correct-failure",
+    );
+
+    const result = await handleCondition(step, baseContext);
+
+    expect(result.nextStepId).toBe("correct-success");
+  });
+
+  it("includes the expression in output", async () => {
+    const expression = "{{payload.env}} == production";
+    const step = makeExpressionStep(expression, "step-a", "step-b");
+
+    const result = await handleCondition(step, baseContext);
+
+    expect((result.output as Record<string, unknown>).expression).toBe(expression);
   });
 });

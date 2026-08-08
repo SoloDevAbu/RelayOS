@@ -40,3 +40,16 @@ All notable changes to this project will be documented in this file.
   - Established shared environment configuration (`env-schema`) ensuring strict runtime validation across both execution contexts (API and Worker).
   - Built a thin internal Fastify API exposing a strictly validated `/health` endpoint for service monitoring.
   - Implemented a unified top-level entrypoint (`src/index.ts`) acting as a process router. It dynamically imports and boots either the API server or the Worker process based on the `PROCESS_TYPE` environment variable, ensuring a clean separation of memory dependencies.
+
+### Changed
+- **Workflow Service (`apps/workflow-service`)**
+  - Extended `CONDITION` handler to support an `expression` config format (e.g. `"{{payload.flag}} == true"`) in addition to the existing structured `field`/`operator`/`onTrue`/`onFalse` format. Expression-mode routes via the step-level `onSuccess`/`onFailure` fields and supports `==` and `!=` comparisons with `{{payload.x}}` and `{{steps.stepId.field}}` template resolution.
+  - Fixed `vi.mock` factory hoisting bug in `context-manager.test.ts` and `state-machine.test.ts` — mock variables are now declared with `vi.hoisted()` so they are available when Vitest lifts the factory to the top of the module.
+
+### Added
+- **Workflow Service (`apps/workflow-service`)**
+  - Implemented `TRANSFORM` step handler (`handlers/transform.ts`): evaluates a `mapping` config object, resolving `{{payload.field}}` and `{{steps.stepId.field}}` templates against the current execution context. Single-template values preserve their original type (e.g. a boolean payload field stays `boolean`); interpolated strings coerce unresolvable references to `""`.
+  - Registered `TRANSFORM` in the step handler registry (`handlers/index.ts`).
+  - Added full unit test suite for `handleTransform` (`handlers/transform.test.ts`): 12 tests covering static pass-through, payload and step-output template resolution, type preservation, string interpolation, multiple templates, missing references, null payload safety, and missing `mapping` config error.
+  - Expanded `condition.test.ts` with a dedicated `expression format` describe block (8 new tests) covering `==`/`!=` evaluation, payload and step-output resolution, unresolvable reference fallback, and `step.onSuccess`/`step.onFailure` routing.
+

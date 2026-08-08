@@ -1,9 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getContext, updateContext, deleteContext } from "./context-manager.js";
 
-const mockGet = vi.fn();
-const mockSetex = vi.fn();
-const mockDel = vi.fn();
+const { mockGet, mockSetex, mockDel, mockDbSelect, mockDbFrom } = vi.hoisted(() => {
+  const mockDbFrom = vi.fn();
+  const mockDbSelect = vi.fn(() => ({ from: mockDbFrom }));
+  return {
+    mockGet: vi.fn(),
+    mockSetex: vi.fn(),
+    mockDel: vi.fn(),
+    mockDbSelect,
+    mockDbFrom,
+  };
+});
 
 vi.mock("@relayos/lib/redis", () => ({
   getRedis: () => ({
@@ -13,16 +21,9 @@ vi.mock("@relayos/lib/redis", () => ({
   }),
 }));
 
-const mockDbFrom = vi.fn();
-const mockDbWhere = vi.fn();
-const mockDbLimit = vi.fn();
-const mockDbSelect = vi.fn(() => ({
-  from: mockDbFrom,
-}));
-
 vi.mock("@relayos/db/client", () => ({
   db: {
-    select: (...args: unknown[]) => mockDbSelect(...args),
+    select: mockDbSelect,
   },
 }));
 

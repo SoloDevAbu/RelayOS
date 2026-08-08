@@ -1,11 +1,16 @@
 import type { StepHandler, StepHandlerResult } from "./types.js";
+import type { ExecutionContext } from "../../types/execution-context.js";
 
-interface ConditionConfig {
+interface StructuredConditionConfig {
   field: string;
   operator: "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "exists";
   value?: unknown;
   onTrue: string;
   onFalse: string;
+}
+
+interface ExpressionConditionConfig {
+  expression: string;
 }
 
 function getNestedValue(obj: unknown, path: string): unknown {
@@ -44,11 +49,61 @@ function evaluateCondition(resolved: unknown, operator: string, value: unknown):
   }
 }
 
+function resolveExpressionTemplate(expression: string, context: ExecutionContext): string {
+  return expression.replace(/\{\{([^}]+)\}\}/g, (_, path: string) => {
+    const value = resolveContextPath(path.trim(), context);
+    return value === undefined || value === null ? "" : String(value);
+  });
+}
+
+function resolveContextPath(path: string, context: ExecutionContext): unknown {
+  const [root, ...rest] = path.split(".");
+
+  if (root === "payload") {
+    return getNestedValue(context.triggerPayload, rest.join("."));
+  }
+
+  if (root === "steps") {
+    const [stepId, ...stepRest] = rest;
+    const stepOutput = context.steps.find((s) => s.stepId === stepId);
+    if (!stepOutput) return undefined;
+    return getNestedValue(stepOutput.output, stepRest.join("."));
+  }
+
+  return undefined;
+}
+
+function evaluateExpression(expression: string, context: ExecutionContext): boolean {
+  const resolved = resolveExpressionTemplate(expression, context);
+
+  const eqMatch = resolved.match(/^(.+?)\s*==\s*(.+)$/);
+  if (eqMatch) {
+    return eqMatch[1]!.trim() === eqMatch[2]!.trim();
+  }
+
+  const neqMatch = resolved.match(/^(.+?)\s*!=\s*(.+)$/);
+  if (neqMatch) {
+    return neqMatch[1]!.trim() !== neqMatch[2]!.trim();
+  }
+
+  return resolved.trim() === "true";
+}
+
 export const handleCondition: StepHandler = async (
   step,
   context,
 ): Promise<StepHandlerResult> => {
-  const config = step.config as ConditionConfig;
+  if ("expression" in step.config) {
+    const { expression } = step.config as unknown as ExpressionConditionConfig;
+    const conditionMet = evaluateExpression(expression, context);
+
+    return {
+      output: { conditionMet, expression },
+      nextStepId: conditionMet ? step.onSuccess : step.onFailure,
+    };
+  }
+
+  const config = step.config as unknown as StructuredConditionConfig;
 
   if (!config.field || !config.operator || !config.onTrue || !config.onFalse) {
     throw new Error("Condition step requires field, operator, onTrue, and onFalse in config");

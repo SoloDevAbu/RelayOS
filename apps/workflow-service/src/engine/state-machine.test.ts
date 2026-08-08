@@ -5,13 +5,16 @@ import {
   InvalidTransitionError,
 } from "./state-machine.js";
 
-const mockReturning = vi.fn();
-const mockWhere = vi.fn(() => ({ returning: mockReturning }));
-const mockSet = vi.fn(() => ({ where: mockWhere }));
-const mockUpdate = vi.fn(() => ({ set: mockSet }));
+const { mockReturning, mockWhere, mockSet, mockUpdate } = vi.hoisted(() => {
+  const mockReturning = vi.fn();
+  const mockWhere = vi.fn(() => ({ returning: mockReturning }));
+  const mockSet = vi.fn(() => ({ where: mockWhere }));
+  const mockUpdate = vi.fn(() => ({ set: mockSet }));
+  return { mockReturning, mockWhere, mockSet, mockUpdate };
+});
 
 vi.mock("@relayos/db/client", () => ({
-  db: { update: (...args: unknown[]) => mockUpdate(...args) },
+  db: { update: mockUpdate },
 }));
 
 vi.mock("@relayos/db/schema", () => ({
