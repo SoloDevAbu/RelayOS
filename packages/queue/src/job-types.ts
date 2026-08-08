@@ -6,3 +6,11 @@ export interface WorkflowExecuteJob {
   resumeFromStepId?: string;
   approvalDecision?: "APPROVED" | "REJECTED";
 }
+
+export interface WorkflowRetryJob {
+  executionId: string;
+  workflowId: string;
+  projectId: string;
+  stepId: string;
+  attempt: number;
+}
