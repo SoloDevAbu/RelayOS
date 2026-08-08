@@ -1,4 +1,4 @@
-import { fetch, type RequestInit } from "undici";
+
 
 export class HttpClientError extends Error {
   public readonly statusCode?: number;
