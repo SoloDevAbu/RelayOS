@@ -4,6 +4,7 @@ import authRoutes from "./auth/index.js";
 import projectRoutes from "./projects/index.js";
 import apiKeyRoutes from "./api-keys/index.js";
 import workflowRoutes from "./workflows/index.js";
+import approvalRoutes from "./approvals/index.js";
 
 const routes: FastifyPluginAsync = async (fastify) => {
   // Public
@@ -20,6 +21,7 @@ const routes: FastifyPluginAsync = async (fastify) => {
   fastify.register(workflowRoutes, {
     prefix: "/projects/:projectId/workflows",
   });
+  fastify.register(approvalRoutes, { prefix: "/approvals" });
 };
 
 export default routes;
