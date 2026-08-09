@@ -93,3 +93,14 @@ All notable changes to this project will be documented in this file.
   - `ExecutionStepRow` interface extended with `attempt: number` across service, step-runner, and worker code.
   - `runSteps` signature extended: takes `workflowId` and `projectId` (needed to populate `WorkflowRetryJob` without extra DB round-trips) and an optional `RunStepsOptions` object.
   - State machine `STEP_TRANSITIONS` extended: `FAILED → RUNNING` (retrying) and `FAILED → SKIPPED` (exhausted, `onError=SKIP`) are now legal transitions.
+
+### Added
+
+- **Platform API & Workflow Service (`apps/api`, `apps/workflow-service`) — Phase 5: Human Approval Gate**
+  - Added `APPROVAL` step handler (`handlers/approval.ts`): Inserts a `PENDING` approval record into the database, optionally with a prompt, and signals the worker to pause the workflow.
+  - Modified the State Machine (`state-machine.ts`): Added `WAITING_APPROVAL` and `CANCELLED` statuses. Added legal transitions for pausing (`RUNNING → WAITING_APPROVAL`), resuming (`WAITING_APPROVAL → RUNNING`), and rejecting (`WAITING_APPROVAL → CANCELLED`).
+  - Updated `StepRunner` (`step-runner.ts`): Recognizes `pause: true` signals from handlers. Safely pauses execution, writes the current step ID to the DB, transitions to `WAITING_APPROVAL`, and exits cleanly without error or retry.
+  - Updated `execution-worker.ts` and `retry-worker.ts`: Handles pause signals by preserving the in-memory execution context (Redis) rather than cleaning it up. `execution-worker.ts` now handles `resumeFromStepId` payloads to pick up exactly where a workflow left off.
+  - Implemented Internal Resume API in Workflow Service (`api/routes/resume.ts`): `POST /internal/executions/:id/resume`. Re-enqueues `WorkflowExecuteJob` with `resumeFromStepId` on approval, or cancels execution on rejection. Protected by `x-internal-secret` header.
+  - Implemented Public Approval API in Platform API (`apps/api/src/routes/approvals`): `POST /approvals/:approvalId/approve` and `/reject`. Includes validation to ensure the user owns the project the approval belongs to. Updates the approval record and calls the Workflow Service's internal resume endpoint.
+  - Added Drizzle migration to include `CANCELLED` in the Postgres `step_status` enum.

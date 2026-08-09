@@ -28,8 +28,11 @@ To guarantee atomic and safe execution, all database writes go through a rigid S
 | `PENDING` | `SKIPPED`   | Step bypassed before it runs           |
 | `RUNNING` | `COMPLETED` | Handler succeeded                      |
 | `RUNNING` | `FAILED`    | Handler threw — first failure recorded |
+| `RUNNING` | `WAITING_APPROVAL`| `APPROVAL` step paused execution |
 | `FAILED`  | `RUNNING`   | New retry attempt beginning            |
 | `FAILED`  | `SKIPPED`   | Retries exhausted, `onError: "SKIP"`   |
+| `WAITING_APPROVAL`| `RUNNING` | Execution resumed after approval   |
+| `WAITING_APPROVAL`| `CANCELLED`| Execution rejected via approval  |
 
 ### Context Manager
 
@@ -55,6 +58,10 @@ Pauses the workflow execution for a specified duration in milliseconds.
 ### `TRANSFORM`
 
 Evaluates a `mapping` config object, resolving `{{payload.field}}` and `{{steps.stepId.field}}` templates against the current execution context. Produces a structured output object for downstream steps.
+
+### `APPROVAL`
+
+Pauses the workflow execution by transitioning the state to `WAITING_APPROVAL` and exiting the worker cleanly. A pending approval record is created in the database. The workflow resumes or is cancelled only when an external HTTP call approves or rejects the step.
 
 ## Retry & Failure Handling
 
@@ -101,7 +108,7 @@ Two BullMQ Workers run inside the same `PROCESS_TYPE=worker` process, sharing a 
 
 | Worker             | Queue              | Responsibility                                                                            |
 | ------------------ | ------------------ | ----------------------------------------------------------------------------------------- |
-| `execution-worker` | `workflow:execute` | Picks up fresh executions, inserts step rows, runs all steps                              |
+| `execution-worker` | `workflow:execute` | Picks up fresh executions and resumed executions, inserts step rows, runs all steps       |
 | `retry-worker`     | `workflow:retry`   | Picks up delayed retry jobs, inserts a new step-attempt row, resumes from the failed step |
 
 Both workers shut down gracefully together on `SIGTERM`/`SIGINT`.
