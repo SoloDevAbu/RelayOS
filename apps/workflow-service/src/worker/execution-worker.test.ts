@@ -12,6 +12,16 @@ vi.mock("../services/execution-service.js", () => ({
   getExecution: (...args: unknown[]) => mockGetExecution(...args),
   getWorkflowDefinition: (...args: unknown[]) => mockGetWorkflowDefinition(...args),
   insertExecutionSteps: (...args: unknown[]) => mockInsertExecutionSteps(...args),
+  getLatestStepRows: vi.fn(),
+  updateExecutionCurrentStepId: vi.fn(),
+}));
+
+vi.mock("@relayos/db/client", () => ({
+  db: {},
+}));
+
+vi.mock("@relayos/db/schema", () => ({
+  approvals: {},
 }));
 
 const mockTransitionExecution = vi.fn();
@@ -229,5 +239,74 @@ describe("processExecution", () => {
     await processExecution(makeJob());
 
     expect(mockRunSteps).not.toHaveBeenCalled();
+  });
+
+  it("handles pause outcome by transitioning execution to WAITING_APPROVAL and preserving context", async () => {
+    mockGetExecution
+      .mockResolvedValueOnce({
+        id: "exec-1",
+        workflowId: "wf-1",
+        status: "PENDING",
+      })
+      .mockResolvedValueOnce({
+        id: "exec-1",
+        workflowId: "wf-1",
+        status: "WAITING_APPROVAL",
+      });
+    mockGetWorkflowDefinition.mockResolvedValue(sampleDefinition);
+    mockInsertExecutionSteps.mockResolvedValue([
+      { id: "row-1", executionId: "exec-1", stepId: "s1", stepType: "APPROVAL", status: "PENDING", attempt: 1 },
+    ]);
+    mockRunSteps.mockResolvedValue({ success: false, completedSteps: [], pausedAtStepId: "s1" });
+
+    await processExecution(makeJob());
+
+    const { updateExecutionCurrentStepId } = await import("../services/execution-service.js");
+    expect(updateExecutionCurrentStepId).toHaveBeenCalledWith("exec-1", "s1");
+    expect(mockTransitionExecution).toHaveBeenCalledWith("exec-1", "RUNNING", "WAITING_APPROVAL");
+    expect(mockDeleteContext).not.toHaveBeenCalled();
+  });
+
+  it("handles resumed job by picking up from resumeFromStepId", async () => {
+    mockGetExecution.mockResolvedValue({
+      id: "exec-1",
+      workflowId: "wf-1",
+      status: "RUNNING",
+    });
+    const defWithOnSuccess = {
+      initialStepId: "s1",
+      steps: [
+        { id: "s1", type: "APPROVAL", name: "Approve", config: {}, onSuccess: "s2" },
+        { id: "s2", type: "DELAY", name: "D2", config: {} },
+      ],
+    };
+    mockGetWorkflowDefinition.mockResolvedValue(defWithOnSuccess);
+
+    const { getLatestStepRows } = await import("../services/execution-service.js");
+    (getLatestStepRows as any).mockResolvedValue([
+      { id: "row-1", executionId: "exec-1", stepId: "s1", stepType: "APPROVAL", status: "WAITING_APPROVAL", attempt: 1 },
+      { id: "row-2", executionId: "exec-1", stepId: "s2", stepType: "DELAY", status: "PENDING", attempt: 1 },
+    ]);
+
+    mockRunSteps.mockResolvedValue({ success: true, completedSteps: ["s2"] });
+
+    await processExecution(makeJob({
+      resumeFromStepId: "s1",
+      approvalDecision: "APPROVED",
+    }));
+
+    expect(mockTransitionExecution).not.toHaveBeenCalledWith("exec-1", "PENDING", "RUNNING", expect.any(Object));
+    expect(mockTransitionStep).toHaveBeenCalledWith(
+      "row-1", "WAITING_APPROVAL", "COMPLETED",
+      expect.objectContaining({ output: { decision: "APPROVED" } }),
+    );
+    expect(mockRunSteps).toHaveBeenCalledWith(
+      "exec-1", "wf-1", "proj-1",
+      defWithOnSuccess,
+      expect.any(Array),
+      expect.any(Object),
+      { startFromStepId: "s2" },
+    );
+    expect(mockTransitionExecution).toHaveBeenCalledWith("exec-1", "RUNNING", "COMPLETED", expect.any(Object));
   });
 });

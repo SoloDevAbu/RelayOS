@@ -7,6 +7,8 @@ import {
   getExecution,
   getWorkflowDefinition,
   insertExecutionSteps,
+  getLatestStepRows,
+  updateExecutionCurrentStepId,
 } from "../services/execution-service.js";
 import {
   transitionExecution,
@@ -15,6 +17,9 @@ import {
 } from "../engine/state-machine.js";
 import { getContext, updateContext, deleteContext } from "../engine/context-manager.js";
 import { runSteps } from "../engine/step-runner.js";
+import { approvals } from "@relayos/db/schema";
+import { db } from "@relayos/db/client";
+import { eq, and } from "drizzle-orm";
 
 const retryQueue = new Queue<WorkflowRetryJob>(QUEUES.WORKFLOW_RETRY, {
   connection: bullmqRedis,
@@ -24,14 +29,26 @@ async function enqueueRetry(job: WorkflowRetryJob, delayMs: number): Promise<voi
   await retryQueue.add("retry", job, { delay: delayMs });
 }
 
+async function findApprovalStepRowId(executionId: string, stepId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: approvals.id })
+    .from(approvals)
+    .where(and(eq(approvals.executionId, executionId), eq(approvals.stepId, stepId)))
+    .limit(1);
+  return row?.id ?? null;
+}
+
 export async function processExecution(
   job: Job<WorkflowExecuteJob>,
 ): Promise<void> {
-  const { executionId, workflowId, projectId } = job.data;
+  const { executionId, workflowId, projectId, resumeFromStepId, approvalDecision } = job.data;
+  const isResume = resumeFromStepId !== undefined;
+
   const log = createLogger({
     executionId,
     workflowId,
     jobId: job.id,
+    ...(isResume ? { resumeFromStepId } : {}),
   });
 
   const execution = await getExecution(executionId);
@@ -41,21 +58,31 @@ export async function processExecution(
     return;
   }
 
-  if (execution.status !== "PENDING") {
-    log.warn(
-      { currentStatus: execution.status },
-      "Execution is not PENDING — already picked up or duplicate delivery, skipping",
-    );
-    return;
+  if (isResume) {
+    if (execution.status !== "RUNNING") {
+      log.warn(
+        { currentStatus: execution.status },
+        "Resumed execution is not RUNNING — skipping",
+      );
+      return;
+    }
+  } else {
+    if (execution.status !== "PENDING") {
+      log.warn(
+        { currentStatus: execution.status },
+        "Execution is not PENDING — already picked up or duplicate delivery, skipping",
+      );
+      return;
+    }
   }
 
   const definition = await getWorkflowDefinition(workflowId);
 
   if (!definition) {
     log.error("Workflow definition not found");
-    await transitionExecution(executionId, "PENDING", "RUNNING", {
-      startedAt: new Date(),
-    });
+    if (!isResume) {
+      await transitionExecution(executionId, "PENDING", "RUNNING", { startedAt: new Date() });
+    }
     await transitionExecution(executionId, "RUNNING", "FAILED", {
       error: `Workflow ${workflowId} not found`,
       completedAt: new Date(),
@@ -63,64 +90,133 @@ export async function processExecution(
     return;
   }
 
-  try {
-    await transitionExecution(executionId, "PENDING", "RUNNING", {
-      startedAt: new Date(),
-    });
-  } catch (error) {
-    if (error instanceof InvalidTransitionError) {
-      log.warn("Another worker already picked up this execution");
-      return;
+  if (!isResume) {
+    try {
+      await transitionExecution(executionId, "PENDING", "RUNNING", {
+        startedAt: new Date(),
+      });
+    } catch (error) {
+      if (error instanceof InvalidTransitionError) {
+        log.warn("Another worker already picked up this execution");
+        return;
+      }
+      throw error;
     }
-    throw error;
   }
 
-  let contextCleaned = false;
-
   try {
-    log.info("Inserting execution step rows");
-    const stepRows = await insertExecutionSteps(executionId, definition);
+    let stepRows;
 
-    log.info({ stepCount: stepRows.length }, "Running steps");
-    const result = await runSteps(
-      executionId,
-      workflowId,
-      projectId,
-      definition,
-      stepRows,
-      {
-        transitionStep,
-        getContext,
-        updateContext,
-        enqueueRetry,
-      },
-    );
+    if (isResume) {
+      log.info({ resumeFromStepId, approvalDecision }, "Resuming execution from approval step");
 
-    if (result.retryEnqueued) {
-      log.info(
-        { completedSteps: result.completedSteps },
-        "Step enqueued for retry — execution remains RUNNING",
+      stepRows = await getLatestStepRows(executionId);
+
+      if (approvalDecision === "APPROVED") {
+        const pausedRow = stepRows.find((r) => r.stepId === resumeFromStepId);
+        if (pausedRow && pausedRow.status === "WAITING_APPROVAL") {
+          await transitionStep(pausedRow.id, "WAITING_APPROVAL", "COMPLETED", {
+            output: { decision: "APPROVED" },
+            completedAt: new Date(),
+          });
+        }
+      }
+
+      const stepAfterApproval = definition.steps.find((s) => s.id === resumeFromStepId)?.onSuccess;
+
+      if (!stepAfterApproval) {
+        log.info("No step after approval — execution completed");
+        await transitionExecution(executionId, "RUNNING", "COMPLETED", {
+          completedAt: new Date(),
+        });
+        await deleteContext(executionId).catch((err) => {
+          log.warn({ err }, "Failed to clean up execution context from Redis");
+        });
+        return;
+      }
+
+      const result = await runSteps(
+        executionId,
+        workflowId,
+        projectId,
+        definition,
+        stepRows,
+        {
+          transitionStep,
+          getContext,
+          updateContext,
+          enqueueRetry,
+        },
+        { startFromStepId: stepAfterApproval },
       );
-      return;
-    }
 
-    if (result.success) {
-      log.info(
-        { completedSteps: result.completedSteps },
-        "Execution completed successfully",
-      );
-      await transitionExecution(executionId, "RUNNING", "COMPLETED", {
-        completedAt: new Date(),
-      });
+      if (result.pausedAtStepId) {
+        log.info({ pausedAtStepId: result.pausedAtStepId }, "Execution paused at approval step");
+        await updateExecutionCurrentStepId(executionId, result.pausedAtStepId);
+        await transitionExecution(executionId, "RUNNING", "WAITING_APPROVAL");
+        return;
+      }
+
+      if (result.retryEnqueued) {
+        log.info({ completedSteps: result.completedSteps }, "Step enqueued for retry");
+        return;
+      }
+
+      if (result.success) {
+        log.info({ completedSteps: result.completedSteps }, "Execution completed after resume");
+        await transitionExecution(executionId, "RUNNING", "COMPLETED", {
+          completedAt: new Date(),
+        });
+      } else {
+        log.error({ failedStepId: result.failedStepId, error: result.error }, "Execution failed after resume");
+        await transitionExecution(executionId, "RUNNING", "FAILED", {
+          error: result.error,
+          completedAt: new Date(),
+        });
+      }
     } else {
-      log.error(
-        { failedStepId: result.failedStepId, error: result.error },
-        "Execution failed",
+      log.info("Inserting execution step rows");
+      stepRows = await insertExecutionSteps(executionId, definition);
+
+      log.info({ stepCount: stepRows.length }, "Running steps");
+      const result = await runSteps(
+        executionId,
+        workflowId,
+        projectId,
+        definition,
+        stepRows,
+        {
+          transitionStep,
+          getContext,
+          updateContext,
+          enqueueRetry,
+        },
       );
-      await transitionExecution(executionId, "RUNNING", "FAILED", {
-        error: result.error,
-        completedAt: new Date(),
-      });
+
+      if (result.pausedAtStepId) {
+        log.info({ pausedAtStepId: result.pausedAtStepId }, "Execution paused at approval step");
+        await updateExecutionCurrentStepId(executionId, result.pausedAtStepId);
+        await transitionExecution(executionId, "RUNNING", "WAITING_APPROVAL");
+        return;
+      }
+
+      if (result.retryEnqueued) {
+        log.info({ completedSteps: result.completedSteps }, "Step enqueued for retry — execution remains RUNNING");
+        return;
+      }
+
+      if (result.success) {
+        log.info({ completedSteps: result.completedSteps }, "Execution completed successfully");
+        await transitionExecution(executionId, "RUNNING", "COMPLETED", {
+          completedAt: new Date(),
+        });
+      } else {
+        log.error({ failedStepId: result.failedStepId, error: result.error }, "Execution failed");
+        await transitionExecution(executionId, "RUNNING", "FAILED", {
+          error: result.error,
+          completedAt: new Date(),
+        });
+      }
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -135,7 +231,8 @@ export async function processExecution(
       log.error({ err: transitionError }, "Failed to transition execution to FAILED after crash");
     }
   } finally {
-    if (!contextCleaned) {
+    const freshExecution = await getExecution(executionId);
+    if (freshExecution?.status !== "WAITING_APPROVAL") {
       await deleteContext(executionId).catch((err) => {
         log.warn({ err }, "Failed to clean up execution context from Redis");
       });

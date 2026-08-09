@@ -8,6 +8,7 @@ import {
   getWorkflowDefinition,
   getLatestStepRows,
   insertRetryStepRow,
+  updateExecutionCurrentStepId,
 } from "../services/execution-service.js";
 import {
   transitionExecution,
@@ -95,6 +96,13 @@ export async function processRetry(
     },
     { startFromStepId: stepId },
   );
+
+  if (result.pausedAtStepId) {
+    log.info({ pausedAtStepId: result.pausedAtStepId }, "Retry run paused at approval step");
+    await updateExecutionCurrentStepId(executionId, result.pausedAtStepId);
+    await transitionExecution(executionId, "RUNNING", "WAITING_APPROVAL");
+    return;
+  }
 
   if (result.retryEnqueued) {
     log.info({ attempt }, "Step enqueued for another retry — execution remains RUNNING");
