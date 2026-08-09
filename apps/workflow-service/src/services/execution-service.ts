@@ -162,3 +162,14 @@ export async function getExecutionSteps(
     .where(eq(executionSteps.executionId, executionId))
     .orderBy(desc(executionSteps.attempt));
 }
+
+export async function updateExecutionCurrentStepId(
+  executionId: string,
+  stepId: string,
+): Promise<void> {
+  await db
+    .update(executions)
+    .set({ currentStepId: stepId, updatedAt: new Date() })
+    .where(eq(executions.id, executionId));
+}
+
