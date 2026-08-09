@@ -3,6 +3,7 @@ import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import configPlugin from "../plugins/config.js";
 import errorHandlerPlugin from "../plugins/error-handler.js";
 import { healthSchema } from "../schemas/health.js";
+import resumeRoutes from "./routes/resume.js";
 
 export async function buildApiApp() {
   const app = Fastify({
@@ -19,7 +20,7 @@ export async function buildApiApp() {
             },
           }
         : {}),
-      redact: ["req.headers.authorization"],
+      redact: ["req.headers.authorization", "req.headers['x-internal-secret']"],
     },
     trustProxy: true,
     ajv: {
@@ -43,5 +44,8 @@ export async function buildApiApp() {
     });
   });
 
+  app.register(resumeRoutes, { prefix: "/internal/executions" });
+
   return app;
 }
+
