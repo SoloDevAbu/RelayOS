@@ -108,6 +108,36 @@ describe("transitionExecution", () => {
       expect.objectContaining({ startedAt: now }),
     );
   });
+
+  it("transitions RUNNING → WAITING_APPROVAL", async () => {
+    mockReturning.mockResolvedValue([{ id: "exec-1" }]);
+
+    await transitionExecution("exec-1", "RUNNING", "WAITING_APPROVAL");
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "WAITING_APPROVAL" }),
+    );
+  });
+
+  it("transitions WAITING_APPROVAL → RUNNING", async () => {
+    mockReturning.mockResolvedValue([{ id: "exec-1" }]);
+
+    await transitionExecution("exec-1", "WAITING_APPROVAL", "RUNNING");
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "RUNNING" }),
+    );
+  });
+
+  it("transitions WAITING_APPROVAL → CANCELLED", async () => {
+    mockReturning.mockResolvedValue([{ id: "exec-1" }]);
+
+    await transitionExecution("exec-1", "WAITING_APPROVAL", "CANCELLED");
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "CANCELLED" }),
+    );
+  });
 });
 
 describe("transitionStep", () => {
@@ -205,6 +235,36 @@ describe("transitionStep", () => {
     await expect(
       transitionStep("step-1", "PENDING", "RUNNING"),
     ).rejects.toThrow(InvalidTransitionError);
+  });
+
+  it("transitions RUNNING → WAITING_APPROVAL", async () => {
+    mockReturning.mockResolvedValue([{ id: "step-1" }]);
+
+    await transitionStep("step-1", "RUNNING", "WAITING_APPROVAL");
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "WAITING_APPROVAL" }),
+    );
+  });
+
+  it("transitions WAITING_APPROVAL → COMPLETED", async () => {
+    mockReturning.mockResolvedValue([{ id: "step-1" }]);
+
+    await transitionStep("step-1", "WAITING_APPROVAL", "COMPLETED");
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "COMPLETED" }),
+    );
+  });
+
+  it("transitions WAITING_APPROVAL → CANCELLED", async () => {
+    mockReturning.mockResolvedValue([{ id: "step-1" }]);
+
+    await transitionStep("step-1", "WAITING_APPROVAL", "CANCELLED");
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "CANCELLED" }),
+    );
   });
 });
 

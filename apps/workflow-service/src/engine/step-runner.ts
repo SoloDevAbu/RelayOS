@@ -32,6 +32,7 @@ export interface StepRunResult {
   failedStepId?: string;
   error?: string;
   retryEnqueued?: boolean;
+  pausedAtStepId?: string;
 }
 
 export async function runSteps(
@@ -105,6 +106,11 @@ export async function runSteps(
     try {
       const context = await deps.getContext(executionId);
       const result = await handler(step, context);
+
+      if (result.pause) {
+        await deps.transitionStep(row.id, "RUNNING", "WAITING_APPROVAL");
+        return { success: false, completedSteps, pausedAtStepId: step.id };
+      }
 
       await deps.transitionStep(row.id, "RUNNING", "COMPLETED", {
         output: result.output,

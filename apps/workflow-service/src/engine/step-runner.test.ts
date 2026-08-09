@@ -137,6 +137,41 @@ describe("runSteps — success paths", () => {
       }),
     );
   });
+
+  it("pauses execution when a handler returns pause: true", async () => {
+    setHandler("DELAY", async () => ({ output: { ok: true } }));
+    setHandler("APPROVAL", async () => ({ output: { pending: true }, pause: true }));
+
+    const definition: WorkflowDefinition = {
+      initialStepId: "s1",
+      steps: [
+        { id: "s1", type: "DELAY", name: "D1", config: {}, onSuccess: "s2" },
+        { id: "s2", type: "APPROVAL", name: "Approve", config: {}, onSuccess: "s3" },
+        { id: "s3", type: "DELAY", name: "D3", config: {} },
+      ],
+    };
+
+    const result = await runSteps(
+      "exec-1", "wf-1", "proj-1",
+      definition,
+      makeRows(["s1", "s2", "s3"]),
+      mockDeps,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.pausedAtStepId).toBe("s2");
+    expect(result.completedSteps).toEqual(["s1"]);
+
+    expect(mockDeps.transitionStep).toHaveBeenCalledWith(
+      "row-0", "RUNNING", "COMPLETED", expect.any(Object),
+    );
+    expect(mockDeps.transitionStep).toHaveBeenCalledWith(
+      "row-1", "RUNNING", "WAITING_APPROVAL",
+    );
+    expect(mockDeps.transitionStep).not.toHaveBeenCalledWith(
+      "row-2", expect.anything(), expect.anything(),
+    );
+  });
 });
 
 describe("runSteps — failure branch: retry", () => {
