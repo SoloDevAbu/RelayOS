@@ -38,6 +38,10 @@ const schema = Type.Object({
 
   // CORS — comma-separated list of allowed origins
   CORS_ORIGINS: Type.String({ default: "http://localhost:3000" }),
+
+  // Internal service communication
+  WORKFLOW_SERVICE_URL: Type.String({ default: "http://localhost:3003" }),
+  INTERNAL_SERVICE_SECRET: Type.String({ default: "local-dev-secret-change-this-in-production" }),
 });
 
 export type AppConfig = Static<typeof schema>;
