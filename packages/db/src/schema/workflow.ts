@@ -37,6 +37,7 @@ export const stepStatusEnum = pgEnum("step_status", [
   "COMPLETED",
   "FAILED",
   "WAITING_APPROVAL",
+  "CANCELLED",
   "SKIPPED",
   "EXHAUSTED",
 ]);
