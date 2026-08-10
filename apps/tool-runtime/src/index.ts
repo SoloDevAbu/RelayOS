@@ -2,6 +2,7 @@ import "dotenv/config";
 import Fastify from "fastify";
 
 import "./tools/flaky-test-tool.js";
+import "./tools/say-hello.js";
 
 import executeRoute from "./routes/execute.js";
 
