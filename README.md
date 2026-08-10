@@ -8,7 +8,7 @@ To get started with running and developing RelayOS locally, please refer to the 
 
 ## Current Project Status
 
-RelayOS is being built in distinct phases. We are currently up to **Phase 4** of the build plan.
+RelayOS is being built in distinct phases. We are currently up to **Phase 5** of the build plan.
 
 ### Completed Phases
 
@@ -30,9 +30,14 @@ RelayOS is being built in distinct phases. We are currently up to **Phase 4** of
   - Granular step retry tracking via `attempt` limits and exponential backoff configuration.
   - `workflow:retry` BullMQ queue processing for resuming directly from the failed step.
 
+- **Phase 5: Human Approval Gate**
+  - Implemented `APPROVAL` step type with unbounded pause & resume mechanics.
+  - Workflow Service waits indefinitely for external HTTP approvals without holding memory, by preserving execution context in Redis.
+  - Exposes internal `POST /internal/executions/:id/resume` and public `POST /approvals/:approvalId/approve|reject` endpoints.
+  - Cleanly handles pausing (`RUNNING → WAITING_APPROVAL`), resuming (`WAITING_APPROVAL → RUNNING`), and rejecting (`WAITING_APPROVAL → CANCELLED`).
+
 ### Upcoming Goals (Future Phases)
 
-- **[Phase 5] Human Approval Gate:** Unbounded pause & resume mechanism. Wait indefinitely for external HTTP approvals without holding memory.
 - **[Phase 6] Scheduled Triggers:** Cron-based scheduling worker for recurring workflow triggers.
 - **[Phase 7] Agent Service:** Stateless AI planner (LLM-driven) serving as a pure function: `input -> next action`.
 - **[Phase 8] Agent Loop Execution:** Wiring the `AI_PLAN` step type into the core engine using the Agent Service, enabling dynamic tool utilization.
