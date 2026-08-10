@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "build": "tsc",
     "dev:api": "cross-env PROCESS_TYPE=api tsx watch src/index.ts",
     "dev:worker": "cross-env PROCESS_TYPE=worker tsx watch src/index.ts",
     "start": "tsx src/index.ts",
