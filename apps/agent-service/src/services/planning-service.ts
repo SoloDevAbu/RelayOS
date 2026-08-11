@@ -3,11 +3,11 @@ import { buildPrompt } from "../prompt/prompt-builder.js";
 import { formatTools } from "../prompt/tool-formatter.js";
 import { callLlm } from "../llm/gemini-client.js";
 import { parseResponse } from "../parsing/response-parser.js";
-import { logger } from "@relayos/lib/logger";
+import type { FastifyBaseLogger } from "fastify";
 
 export async function plan(
   input: PlanRequest,
-  log: typeof logger,
+  log: FastifyBaseLogger,
 ): Promise<PlanResponse> {
   const prompt = buildPrompt({
     goal: input.goal,
