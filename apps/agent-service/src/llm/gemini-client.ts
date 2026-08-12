@@ -1,17 +1,21 @@
 import { generateText, type GenerateTextResult, type ToolSet } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import type { ModelMessage } from "ai";
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+export const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
 const google = createGoogleGenerativeAI();
 
 export async function callLlm(
-  prompt: string,
+  instructions: string,
+  messages: ModelMessage[],
   tools: ToolSet,
 ): Promise<GenerateTextResult<ToolSet, never, never>> {
   return generateText({
-    model: google(GEMINI_MODEL),
-    prompt,
+    model: google(MODEL_NAME),
+    instructions,
+    messages,
     tools,
+    toolChoice: "required",
   });
 }
