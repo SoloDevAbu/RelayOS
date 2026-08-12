@@ -1,32 +1,37 @@
+import type { ModelMessage } from "ai";
 import type { PlanRequest } from "../schemas/plan.js";
+import { META_TOOL_NAMES } from "./tool-formatter.js";
 
-const SYSTEM_PROMPT = `You are a planning agent for an AI workflow execution platform called RelayOS.
+const SYSTEM_PROMPT = `You are a planning agent for RelayOS, an AI workflow execution platform.
 
 Your job is to decide the SINGLE next action to take toward completing a goal.
 
-You have three options:
-1. Call one of the available tools — pick the most relevant tool and provide its input.
-2. Mark the goal as complete — only when all necessary work is done and the goal is fully satisfied.
-3. Request human approval — when you are uncertain, the task is ambiguous, or a decision requires human judgment.
+You MUST call exactly one tool per invocation:
+- Call one of the available workflow tools to make progress toward the goal.
+- Call "${META_TOOL_NAMES.complete}" when all necessary work is done and the goal is fully satisfied.
+- Call "${META_TOOL_NAMES.approval}" when you are uncertain, the task is ambiguous, or a decision requires human judgment.
 
 Rules:
 - You make ONE decision per invocation. Do not try to plan multiple steps ahead.
-- If the iteration history shows a tool was already called and its result satisfies the goal, mark complete.
-- If no tool is appropriate and the goal cannot be completed, request approval rather than guessing.
-- Always explain your reasoning.
-- When calling a tool, provide the input exactly as the tool's schema requires.
-- Must ask for human approval if the tool explicitely asked for`;
+- If the iteration history shows a tool was already called and its result satisfies the goal, call "${META_TOOL_NAMES.complete}".
+- If no tool is appropriate and the goal cannot be completed, call "${META_TOOL_NAMES.approval}" rather than guessing.
+- When calling a workflow tool, provide the input exactly as the tool's schema requires.`;
+
+export interface PromptOutput {
+  instructions: string;
+  messages: ModelMessage[];
+}
 
 export function buildPrompt(input: {
   goal: PlanRequest["goal"];
   context: PlanRequest["context"];
   memories: PlanRequest["memories"];
   iterationHistory: PlanRequest["iterationHistory"];
-}): string {
-  const sections: string[] = [SYSTEM_PROMPT, "", `## Goal\n${input.goal}`];
+}): PromptOutput {
+  const userParts: string[] = [`## Goal\n${input.goal}`];
 
   if (Object.keys(input.context).length > 0) {
-    sections.push(`## Context\n${JSON.stringify(input.context, null, 2)}`);
+    userParts.push(`## Context\n${JSON.stringify(input.context, null, 2)}`);
   }
 
   if (input.memories.length > 0) {
@@ -36,7 +41,7 @@ export function buildPrompt(input: {
           `- ${m.content}${m.relevance != null ? ` (relevance: ${m.relevance})` : ""}`,
       )
       .join("\n");
-    sections.push(`## Relevant Memories\n${memoryText}`);
+    userParts.push(`## Relevant Memories\n${memoryText}`);
   }
 
   if (input.iterationHistory.length > 0) {
@@ -51,8 +56,11 @@ export function buildPrompt(input: {
         return parts.join("\n");
       })
       .join("\n\n");
-    sections.push(`## Iteration History\n${historyText}`);
+    userParts.push(`## Iteration History\n${historyText}`);
   }
 
-  return sections.join("\n\n");
+  return {
+    instructions: SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userParts.join("\n\n") }],
+  };
 }
