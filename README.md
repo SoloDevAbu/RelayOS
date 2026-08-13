@@ -8,7 +8,7 @@ To get started with running and developing RelayOS locally, please refer to the 
 
 ## Current Project Status
 
-RelayOS is being built in distinct phases. We are currently up to **Phase 5** of the build plan.
+RelayOS is being built in distinct phases. We are currently up to **Phase 8** of the build plan.
 
 ### Completed Phases
 
@@ -35,12 +35,18 @@ RelayOS is being built in distinct phases. We are currently up to **Phase 5** of
   - Workflow Service waits indefinitely for external HTTP approvals without holding memory, by preserving execution context in Redis.
   - Exposes internal `POST /internal/executions/:id/resume` and public `POST /approvals/:approvalId/approve|reject` endpoints.
   - Cleanly handles pausing (`RUNNING → WAITING_APPROVAL`), resuming (`WAITING_APPROVAL → RUNNING`), and rejecting (`WAITING_APPROVAL → CANCELLED`).
+- **Phase 7: Agent Service**
+  - Fully implemented `apps/agent-service`.
+  - Stateless AI planner utilizing `@ai-sdk/google` (Gemini).
+  - Implements deterministic prompt builder and tool formatter with system-level meta tools (`request_human_approval`, `mark_goal_complete`).
+- **Phase 8: Agent Loop Execution**
+  - Wired the `AI_PLAN` step type into the core workflow execution engine.
+  - Added safety limits via `maxIterations` property on workflow schemas.
+  - Handles Agent pauses and re-entries from `APPROVAL` decisions by seamlessly injecting approval results into iteration history.
 
 ### Upcoming Goals (Future Phases)
 
 - **[Phase 6] Scheduled Triggers:** Cron-based scheduling worker for recurring workflow triggers.
-- **[Phase 7] Agent Service:** Stateless AI planner (LLM-driven) serving as a pure function: `input -> next action`.
-- **[Phase 8] Agent Loop Execution:** Wiring the `AI_PLAN` step type into the core engine using the Agent Service, enabling dynamic tool utilization.
 - **[Phase 9] Memory Service (RAG):** Adding short-lived execution memory and long-term knowledge memory using `pgvector` for OpenAI embeddings.
 - **[Phase 10] Harden Tool Runtime:** Full schema validation, robust error capture, and timeout enforcement in `apps/tool-runtime`.
 - **[Phase 11] SDK Package:** Publishing `@repo/sdk` for easier programmatic interaction with RelayOS.
@@ -57,6 +63,7 @@ This monorepo manages several specialized microservices to cleanly separate stat
 | `apps/platform-api`      | Auth, projects, API keys, workflow CRUD             | Fastify, Drizzle       |
 | `apps/ingestion-service` | High throughput trigger queue endpoint              | Fastify, BullMQ        |
 | `apps/workflow-service`  | Execution engine (state machine, step runner)       | Fastify, BullMQ Worker |
+| `apps/agent-service`     | Stateless AI planner (LLM routing & reasoning)      | Fastify, AI SDK        |
 | `apps/tool-runtime`      | Local tool registry and executor                    | Fastify                |
 | `packages/db`            | Database schema and Drizzle ORM client              | TypeScript             |
 | `packages/queue`         | BullMQ queue interfaces and generic payload types   | TypeScript             |
