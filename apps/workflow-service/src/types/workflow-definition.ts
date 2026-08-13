@@ -15,6 +15,7 @@ export interface WorkflowStep {
   onFailure?: string;
   maxAttempts?: number;
   onError?: "FAIL" | "SKIP";
+  maxIterations?: number;
 }
 
 export interface WorkflowDefinition {

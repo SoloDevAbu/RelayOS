@@ -22,6 +22,8 @@ export const WorkflowStep = Type.Object(
     onFailure: Type.Optional(Type.String()),
     /** Max retry attempts (default 3) */
     maxRetries: Type.Optional(Type.Integer({ minimum: 0, maximum: 10 })),
+    /** Max agent loop iterations for AI_PLAN steps */
+    maxIterations: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
   },
   { additionalProperties: false },
 );
