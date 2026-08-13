@@ -319,9 +319,10 @@ describe("runSteps — error paths", () => {
   it("returns failure for unknown step type", async () => {
     const definition: WorkflowDefinition = {
       initialStepId: "s1",
-      steps: [{ id: "s1", type: "AI_PLAN", name: "Plan", config: {} }],
+      steps: [{ id: "s1", type: "DELAY", name: "Unknown", config: {} }],
     };
 
+    // No handler registered for DELAY in this test (clearHandlers removes all)
     const result = await runSteps("exec-1", "wf-1", "proj-1", definition, makeRows(["s1"]), mockDeps);
 
     expect(result.success).toBe(false);
