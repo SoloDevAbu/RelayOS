@@ -15,7 +15,7 @@ import {
   transitionStep,
   InvalidTransitionError,
 } from "../engine/state-machine.js";
-import { getContext, updateContext, deleteContext } from "../engine/context-manager.js";
+import { getContext, updateContext, deleteContext, updateIterationHistory, getIterationHistory } from "../engine/context-manager.js";
 import { runSteps } from "../engine/step-runner.js";
 import { approvals } from "@relayos/db/schema";
 import { db } from "@relayos/db/client";
@@ -112,19 +112,35 @@ export async function processExecution(
 
       stepRows = await getLatestStepRows(executionId);
 
+      const pausedStepDef = resumeFromStepId
+        ? definition.steps.find((s) => s.id === resumeFromStepId)
+        : undefined;
+      const isAiPlanResume = pausedStepDef?.type === "AI_PLAN";
+
       if (approvalDecision === "APPROVED") {
         const pausedRow = stepRows.find((r) => r.stepId === resumeFromStepId);
         if (pausedRow && pausedRow.status === "WAITING_APPROVAL") {
-          await transitionStep(pausedRow.id, "WAITING_APPROVAL", "COMPLETED", {
-            output: { decision: "APPROVED" },
-            completedAt: new Date(),
-          });
+          if (isAiPlanResume) {
+            const existingHistory = await getIterationHistory(executionId, resumeFromStepId!);
+            await updateIterationHistory(executionId, resumeFromStepId!, [
+              ...existingHistory,
+              { action: "request_approval", decision: "APPROVED" },
+            ]);
+            await transitionStep(pausedRow.id, "WAITING_APPROVAL", "RUNNING");
+          } else {
+            await transitionStep(pausedRow.id, "WAITING_APPROVAL", "COMPLETED", {
+              output: { decision: "APPROVED" },
+              completedAt: new Date(),
+            });
+          }
         }
       }
 
-      const stepAfterApproval = definition.steps.find((s) => s.id === resumeFromStepId)?.onSuccess;
+      const startStepId = isAiPlanResume
+        ? resumeFromStepId!
+        : definition.steps.find((s) => s.id === resumeFromStepId)?.onSuccess;
 
-      if (!stepAfterApproval) {
+      if (!startStepId) {
         log.info("No step after approval — execution completed");
         await transitionExecution(executionId, "RUNNING", "COMPLETED", {
           completedAt: new Date(),
@@ -147,7 +163,7 @@ export async function processExecution(
           updateContext,
           enqueueRetry,
         },
-        { startFromStepId: stepAfterApproval },
+        { startFromStepId: startStepId },
       );
 
       if (result.pausedAtStepId) {

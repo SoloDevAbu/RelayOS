@@ -99,9 +99,11 @@ export async function runSteps(
       };
     }
 
-    await deps.transitionStep(row.id, "PENDING", "RUNNING", {
-      startedAt: new Date(),
-    });
+    if (row.status === "PENDING") {
+      await deps.transitionStep(row.id, "PENDING", "RUNNING", {
+        startedAt: new Date(),
+      });
+    }
 
     try {
       const context = await deps.getContext(executionId);
