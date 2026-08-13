@@ -2,7 +2,7 @@ import { generateText, type GenerateTextResult, type ToolSet } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import type { ModelMessage } from "ai";
 
-export const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+export const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 
 const google = createGoogleGenerativeAI();
 

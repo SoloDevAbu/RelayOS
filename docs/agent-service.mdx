@@ -1,0 +1,45 @@
+# Agent Service
+
+The Agent Service (`apps/agent-service`) provides stateless LLM planning and decision-making capabilities for RelayOS. It evaluates workflow goals, contexts, and available tools, deciding the single next action to execute.
+
+## Core Responsibilities
+
+1. **State Evaluation:** Receives a snapshot of the current goal, available tools, execution context, and iteration history.
+2. **Next-Step Planning:** Uses LLMs (via Vercel AI SDK) to determine the next logical action.
+3. **Deterministic Outputs:** Strictly returns actionable decisions, such as tool calls or completion signals, rather than raw text.
+
+## Architecture & AI SDK Integration
+
+The service is built on a **"Tool-First"** pattern. Rather than relying on fragile string-matching or free-text heuristics, the LLM is forced into a deterministic state machine using tools.
+
+### Control Tools
+
+To communicate intent unambiguously, the service injects two special "Control Tools" alongside any user-provided workflow tools:
+
+- `mark_goal_complete`: Called when the LLM determines the goal has been fully satisfied. Requires a summary argument.
+- `request_human_approval`: Called when the LLM is uncertain, the task is ambiguous, or human intervention is required. Requires a message argument.
+
+The LLM is constrained with `toolChoice: "required"`, ensuring it *must* execute one of the available tools (either a user workflow tool or a control tool) and cannot output raw text.
+
+### Dynamic Schema Validation
+
+Tools are passed to the AI SDK using the `jsonSchema()` helper. This translates JSON Schema definitions (often provided externally by the workflow engine) into strict runtime constraints that the SDK validates against the LLM's output.
+
+### Prompting Strategy
+
+Prompts strictly adhere to the AI SDK's separation of roles:
+- **`instructions` (System Prompt):** Defines the rigid rules, behaviors, and instructions for how to use the control tools.
+- **`messages` (User Context):** Passes dynamic workflow data, current goal state, memories, and iteration history.
+
+This separation protects against context pollution and ensures the LLM understands its core directives regardless of dynamic input.
+
+## Error Handling
+
+Failures during planning are categorized and thrown via a structured `PlanningError` class.
+
+- `MODEL_NO_TOOL_CALL`: Thrown if the LLM somehow bypasses `toolChoice: "required"` and provides no tool calls.
+- `MODEL_CONTENT_FILTERED`: The LLM provider blocked the response due to content policies.
+- `MODEL_TRUNCATED`: The response hit max token length before finalizing a decision.
+- `LLM_CALL_FAILED`: General network or SDK-level failure communicating with the LLM provider.
+
+These errors allow calling services (or route handlers) to easily map failure states to appropriate HTTP codes and retry policies.

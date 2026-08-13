@@ -104,3 +104,16 @@ All notable changes to this project will be documented in this file.
   - Implemented Internal Resume API in Workflow Service (`api/routes/resume.ts`): `POST /internal/executions/:id/resume`. Re-enqueues `WorkflowExecuteJob` with `resumeFromStepId` on approval, or cancels execution on rejection. Protected by `x-internal-secret` header.
   - Implemented Public Approval API in Platform API (`apps/api/src/routes/approvals`): `POST /approvals/:approvalId/approve` and `/reject`. Includes validation to ensure the user owns the project the approval belongs to. Updates the approval record and calls the Workflow Service's internal resume endpoint.
   - Added Drizzle migration to include `CANCELLED` in the Postgres `step_status` enum.
+
+- **Agent Service (`apps/agent-service`)**
+  - Initialized a stateless Fastify service dedicated to AI planning and decision making.
+  - Implemented `/internal/plan` endpoint to accept a `goal`, `context`, `memories`, `iterationHistory`, and `availableTools`.
+  - Integrated the Vercel AI SDK and Google Generative AI (`gemini-2.0-flash`) for executing planning cycles.
+
+### Changed
+
+- **Agent Service (`apps/agent-service`)**
+  - Replaced brittle string-matching heuristics (`looksLikeCompletion`) with explicit "Control Tools" (`mark_goal_complete`, `request_human_approval`) leveraging Vercel AI SDK's `toolChoice: "required"` to enforce deterministic outputs.
+  - Implemented dynamic, strict tool schema validation using the SDK's native `jsonSchema()` utility instead of an empty passthrough.
+  - Restructured prompts to leverage native `instructions` (system prompt) and `messages` separation, preventing context pollution and prompt injection risks.
+  - Introduced a `PlanningError` class for robust error handling, explicitly managing edge cases like content filter violations, context length limits, and missing tool calls.
