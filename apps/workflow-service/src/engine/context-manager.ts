@@ -2,7 +2,7 @@ import { getRedis } from "@relayos/lib/redis";
 import { db } from "@relayos/db/client";
 import { executions, executionSteps } from "@relayos/db/schema";
 import { eq, and } from "drizzle-orm";
-import type { ExecutionContext, StepOutput } from "../types/execution-context.js";
+import type { ExecutionContext, IterationEntry, StepOutput } from "../types/execution-context.js";
 
 const CONTEXT_TTL_SECONDS = 3600;
 const CONTEXT_KEY_PREFIX = "exec-ctx:";
@@ -93,4 +93,40 @@ export async function updateContext(
 export async function deleteContext(executionId: string): Promise<void> {
   const redis = getRedis();
   await redis.del(redisKey(executionId));
+}
+
+export async function getIterationHistory(
+  executionId: string,
+  stepId: string,
+): Promise<IterationEntry[]> {
+  const context = await getContext(executionId);
+  const entry = context.steps.find((s) => s.stepId === stepId);
+  return entry?.iterationHistory ?? [];
+}
+
+export async function updateIterationHistory(
+  executionId: string,
+  stepId: string,
+  history: IterationEntry[],
+): Promise<void> {
+  const context = await getContext(executionId);
+
+  const existing = context.steps.find((s) => s.stepId === stepId);
+  if (existing) {
+    existing.iterationHistory = history;
+  } else {
+    context.steps.push({
+      stepId,
+      output: null,
+      completedAt: new Date().toISOString(),
+      iterationHistory: history,
+    });
+  }
+
+  const redis = getRedis();
+  await redis.setex(
+    redisKey(executionId),
+    CONTEXT_TTL_SECONDS,
+    JSON.stringify(context),
+  );
 }

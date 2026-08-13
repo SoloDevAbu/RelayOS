@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getContext, updateContext, deleteContext } from "./context-manager.js";
+import { getContext, updateContext, deleteContext, getIterationHistory, updateIterationHistory } from "./context-manager.js";
 
 const { mockGet, mockSetex, mockDel, mockDbSelect, mockDbFrom } = vi.hoisted(() => {
   const mockDbFrom = vi.fn();
@@ -148,5 +148,87 @@ describe("deleteContext", () => {
     await deleteContext("exec-1");
 
     expect(mockDel).toHaveBeenCalledWith("exec-ctx:exec-1");
+  });
+});
+
+describe("getIterationHistory", () => {
+  it("returns empty array when no entry exists for stepId", async () => {
+    const cached = {
+      executionId: "exec-1",
+      triggerPayload: null,
+      steps: [],
+    };
+    mockGet.mockResolvedValue(JSON.stringify(cached));
+
+    const history = await getIterationHistory("exec-1", "step-ai");
+    expect(history).toEqual([]);
+  });
+
+  it("returns iterationHistory from matching step entry", async () => {
+    const cached = {
+      executionId: "exec-1",
+      triggerPayload: null,
+      steps: [
+        {
+          stepId: "step-ai",
+          output: null,
+          completedAt: "2026-01-01T00:00:00Z",
+          iterationHistory: [
+            { action: "tool_call", tool: "search", result: { data: 1 } },
+          ],
+        },
+      ],
+    };
+    mockGet.mockResolvedValue(JSON.stringify(cached));
+
+    const history = await getIterationHistory("exec-1", "step-ai");
+    expect(history).toHaveLength(1);
+    expect(history[0]!.tool).toBe("search");
+  });
+});
+
+describe("updateIterationHistory", () => {
+  it("creates a placeholder step entry when none exists", async () => {
+    const cached = {
+      executionId: "exec-1",
+      triggerPayload: null,
+      steps: [],
+    };
+    mockGet.mockResolvedValue(JSON.stringify(cached));
+
+    const history = [{ action: "tool_call", tool: "search", result: {} }];
+    await updateIterationHistory("exec-1", "step-ai", history);
+
+    const written = JSON.parse(mockSetex.mock.calls[0]![2] as string);
+    const aiStep = written.steps.find((s: { stepId: string }) => s.stepId === "step-ai");
+    expect(aiStep).toBeDefined();
+    expect(aiStep.iterationHistory).toEqual(history);
+  });
+
+  it("updates iterationHistory on an existing step entry", async () => {
+    const cached = {
+      executionId: "exec-1",
+      triggerPayload: null,
+      steps: [
+        {
+          stepId: "step-ai",
+          output: null,
+          completedAt: "2026-01-01T00:00:00Z",
+          iterationHistory: [{ action: "tool_call", tool: "search" }],
+        },
+      ],
+    };
+    mockGet.mockResolvedValue(JSON.stringify(cached));
+
+    const newHistory = [
+      { action: "tool_call", tool: "search" },
+      { action: "complete" },
+    ];
+    await updateIterationHistory("exec-1", "step-ai", newHistory);
+
+    const written = JSON.parse(mockSetex.mock.calls[0]![2] as string);
+    const aiStep = written.steps.find((s: { stepId: string }) => s.stepId === "step-ai");
+    expect(aiStep.iterationHistory).toHaveLength(2);
+    expect(aiStep.iterationHistory[1].action).toBe("complete");
   });
 });
