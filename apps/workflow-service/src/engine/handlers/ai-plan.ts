@@ -1,7 +1,7 @@
 import { db } from "@relayos/db/client";
 import { approvals } from "@relayos/db/schema";
 import type { StepHandler, StepHandlerResult } from "./types.js";
-import { callTool } from "./call-tool.js";
+import { callTool, ToolCallError, ToolRuntimeUnreachableError } from "./call-tool.js";
 import {
   callAgentPlan,
   type ToolDefinition,
@@ -11,6 +11,9 @@ import {
   getIterationHistory,
   updateIterationHistory,
 } from "../context-manager.js";
+import { createLogger } from "@relayos/lib/logger";
+
+const log = createLogger({ component: "ai-plan-handler" });
 
 const DEFAULT_MAX_ITERATIONS = 10;
 
@@ -71,6 +74,11 @@ export const handleAiPlan: StepHandler = async (
 
   const agentContext = buildContextForAgent(context);
 
+  const stepLog = log.child({
+    executionId: context.executionId,
+    stepId: step.id,
+  });
+
   while (true) {
     if (iterationCount >= maxIterations) {
       throw new AiPlanMaxIterationsError(step.id, maxIterations);
@@ -85,12 +93,25 @@ export const handleAiPlan: StepHandler = async (
     });
 
     if (decision.action === "complete") {
+      stepLog.info(
+        { action: "complete", iterationCount },
+        "Agent decision: complete",
+      );
       return {
-        output: { summary: decision.summary, reasoning: decision.reasoning },
+        output: {
+          summary: decision.summary,
+          reasoning: decision.reasoning,
+          iterationHistory,
+        },
       };
     }
 
     if (decision.action === "request_approval") {
+      stepLog.info(
+        { action: "request_approval", iterationCount, message: decision.message },
+        "Agent decision: request_approval",
+      );
+
       const stepContext = {
         stepName: step.name,
         triggerPayload: context.triggerPayload,
@@ -113,16 +134,55 @@ export const handleAiPlan: StepHandler = async (
       );
 
       return {
-        output: { awaiting: "APPROVAL", stepId: step.id },
+        output: {
+          awaiting: "APPROVAL",
+          stepId: step.id,
+          iterationHistory,
+        },
         pause: true,
       };
     }
 
-    const toolResult = await callTool(
-      decision.tool,
-      decision.input,
-      context.executionId,
+    stepLog.info(
+      { action: "tool_call", tool: decision.tool, iterationCount, reasoning: decision.reasoning },
+      "Agent decision: tool_call",
     );
+
+    let toolResult: Awaited<ReturnType<typeof callTool>>;
+    try {
+      toolResult = await callTool(
+        decision.tool,
+        decision.input,
+        context.executionId,
+      );
+    } catch (toolError) {
+      const isExpected =
+        toolError instanceof ToolCallError ||
+        toolError instanceof ToolRuntimeUnreachableError;
+
+      const errorMessage =
+        toolError instanceof Error ? toolError.message : String(toolError);
+
+      stepLog.warn(
+        { tool: decision.tool, error: errorMessage, iterationCount, expected: isExpected },
+        "Tool call failed — feeding error back to agent",
+      );
+
+      iterationHistory = [
+        ...iterationHistory,
+        {
+          action: "tool_call",
+          tool: decision.tool,
+          input: decision.input,
+          result: { error: errorMessage },
+          reasoning: decision.reasoning,
+        },
+      ];
+
+      iterationCount++;
+      await updateIterationHistory(context.executionId, step.id, iterationHistory);
+      continue;
+    }
 
     iterationHistory = [
       ...iterationHistory,
