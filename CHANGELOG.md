@@ -117,3 +117,23 @@ All notable changes to this project will be documented in this file.
   - Implemented dynamic, strict tool schema validation using the SDK's native `jsonSchema()` utility instead of an empty passthrough.
   - Restructured prompts to leverage native `instructions` (system prompt) and `messages` separation, preventing context pollution and prompt injection risks.
   - Introduced a `PlanningError` class for robust error handling, explicitly managing edge cases like content filter violations, context length limits, and missing tool calls.
+
+### Added
+
+- **Workflow Service (`apps/workflow-service`) — AI_PLAN Step Handler**
+  - Implemented `AI_PLAN` step handler (`handlers/ai-plan.ts`): an autonomous agent loop that calls the Agent Service to decide the next action (`tool_call`, `request_approval`, or `complete`). Each iteration's decision and tool result is recorded in `iterationHistory` stored in Redis via the Context Manager.
+  - Added `maxIterations` support (default 10) — throws `AiPlanMaxIterationsError` when exceeded.
+  - Integrated with `call-tool.ts` to execute agent-chosen tools via the Tool Runtime, and with the approval system for agent-initiated `request_approval` decisions.
+  - Updated `execution-worker.ts` to handle AI_PLAN resume after approval — reloads iteration history and continues the agent loop rather than advancing to the next step.
+  - Added `getIterationHistory` and `updateIterationHistory` to the Context Manager for persisting per-step agent loop state in Redis.
+
+- **Documentation (`docs/`)**
+  - Added `docs/getting-started.mdx`: comprehensive step-by-step guide covering signup, project creation, API key provisioning, workflow definition (all 6 step types), activation, triggering, execution lifecycle, approval/rejection, retry behavior, a full AI_PLAN end-to-end example, architecture diagram, environment variables reference, and troubleshooting.
+
+### Fixed
+
+- **Workflow Service (`apps/workflow-service`) — AI_PLAN Tool Error Handling**
+  - Fixed critical bug where tool call failures (HTTP 500 from Tool Runtime) inside the AI_PLAN agent loop would throw an uncaught `ToolCallError`, bubbling out of the handler and causing the entire step to fail immediately. The agent never saw the error and had no chance to replan.
+  - `callTool()` inside the AI_PLAN loop is now wrapped in a try/catch. On `ToolCallError` or `ToolRuntimeUnreachableError`, the error is recorded as an iteration history entry (`result: { error: "..." }`) and the loop continues — the agent sees the failure on the next iteration and can retry, pick a different tool, or request human help.
+  - Added structured logging of every agent decision (`tool_call`, `complete`, `request_approval`) from within the workflow-service worker, including tool name, iteration count, and reasoning. Previously, agent decisions were only visible in agent-service logs.
+  - `iterationHistory` is now included in the step's `output` on both `complete` and `request_approval`, so it is persisted to `execution_steps.output` in PostgreSQL. Previously, iteration history was stored only in Redis and lost when the execution context was deleted in the `finally` block.

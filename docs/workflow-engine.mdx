@@ -63,6 +63,16 @@ Evaluates a `mapping` config object, resolving `{{payload.field}}` and `{{steps.
 
 Pauses the workflow execution by transitioning the state to `WAITING_APPROVAL` and exiting the worker cleanly. A pending approval record is created in the database. The workflow resumes or is cancelled only when an external HTTP call approves or rejects the step.
 
+### `AI_PLAN`
+
+An autonomous agent loop powered by an LLM. Instead of executing a fixed action, the engine calls the [Agent Service](/docs/agent-service) in a `while(true)` loop, passing the goal, available tools, execution context, and iteration history. On each iteration the agent decides one action:
+
+- **`tool_call`** → The engine calls the specified tool via the Tool Runtime. If the tool succeeds, the result is added to iteration history. If the tool fails (HTTP 500), the error is fed back to the agent as history so it can replan — tool errors do **not** terminate the step.
+- **`request_approval`** → The step pauses at `WAITING_APPROVAL`. After approval, the agent loop resumes with the full history intact.
+- **`complete`** → The step finishes with the agent's summary. The full `iterationHistory` is persisted to `execution_steps.output`.
+
+The loop is bounded by `maxIterations` (default 10). If exceeded, the step throws `AiPlanMaxIterationsError`.
+
 ## Retry & Failure Handling
 
 When a step handler throws, the engine consults a **retry policy** before deciding what happens next. Each step can configure this via two fields on its definition:
