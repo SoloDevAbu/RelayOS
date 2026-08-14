@@ -1,0 +1,726 @@
+---
+title: "Getting Started — Full Walkthrough"
+description: "Step-by-step guide to run RelayOS locally: sign up, create projects, define workflows, trigger executions, and handle approvals."
+---
+
+# Getting Started — Full Walkthrough
+
+This guide walks through the entire RelayOS flow from first boot to a fully completed
+workflow execution. Follow it sequentially — each step builds on the previous one.
+
+> All examples use `curl`. Replace `localhost` ports with your deployment URLs in
+> production.
+
+## Service Map
+
+| Service             | Default Port | Purpose                                      |
+| ------------------- | ------------ | -------------------------------------------- |
+| Platform API        | `3002`       | Auth, projects, workflows, approvals, keys   |
+| Ingestion Service   | `3001`       | Public trigger endpoint (API-key auth)       |
+| Workflow Service    | `3003`       | Internal API + BullMQ workers (execution)    |
+| Agent Service       | `3004`       | Stateless LLM planning (AI_PLAN steps)       |
+| Tool Runtime        | `8080`       | Executes registered tools                    |
+
+---
+
+## Prerequisites & Setup
+
+See [SETUP.md](../SETUP.md) for installation details. Quick version:
+
+```bash
+# 1. Install
+pnpm install
+
+# 2. Configure
+cp .env.example .env
+# Edit .env — set DATABASE_URL, REDIS_URL, GOOGLE_GENERATIVE_AI_API_KEY
+
+# 3. Migrate
+cd packages/db && pnpm db:generate && pnpm db:migrate
+
+# 4. Start all services
+pnpm dev
+```
+
+---
+
+## Step 1 — Sign Up
+
+Create a user account. No auth token is needed for this endpoint.
+
+```bash
+curl -X POST http://localhost:3002/api/v1/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Alice",
+    "email": "alice@example.com",
+    "password": "securepassword123"
+  }'
+```
+
+**Response (201):**
+
+```json
+{
+  "user": {
+    "id": "usr-uuid",
+    "name": "Alice",
+    "email": "alice@example.com",
+    "createdAt": "2026-08-14T12:00:00.000Z"
+  },
+  "accessToken": "eyJhbG...",
+  "refreshToken": "eyJhbG..."
+}
+```
+
+Save the `accessToken` — you'll use it as a Bearer token for all authenticated requests.
+
+---
+
+## Step 2 — Sign In (returning users)
+
+If you already have an account:
+
+```bash
+curl -X POST http://localhost:3002/api/v1/auth/signin \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "alice@example.com",
+    "password": "securepassword123"
+  }'
+```
+
+**Response (200):** Same shape as signup — `accessToken` + `refreshToken`.
+
+### Refresh & Logout
+
+```bash
+# Refresh tokens
+curl -X POST http://localhost:3002/api/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{ "refreshToken": "<your_refresh_token>" }'
+
+# Logout (invalidate refresh token)
+curl -X POST http://localhost:3002/api/v1/auth/logout \
+  -H "Content-Type: application/json" \
+  -d '{ "refreshToken": "<your_refresh_token>" }'
+```
+
+> **Rate limit:** Auth endpoints are limited to 10 requests/minute per IP+email.
+
+---
+
+## Step 3 — Create a Project
+
+Projects are the top-level container for workflows and API keys.
+
+```bash
+curl -X POST http://localhost:3002/api/v1/projects \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access_token>" \
+  -d '{ "name": "My First Project" }'
+```
+
+**Response (201):**
+
+```json
+{
+  "id": "proj-uuid",
+  "userId": "usr-uuid",
+  "name": "My First Project",
+  "slug": "my-first-project",
+  "createdAt": "...",
+  "updatedAt": "..."
+}
+```
+
+Save the `id` — this is your `projectId`.
+
+### Other Project Endpoints
+
+| Method   | Path                                    | Description          |
+| -------- | --------------------------------------- | -------------------- |
+| `GET`    | `/api/v1/projects`                      | List all projects    |
+| `GET`    | `/api/v1/projects/:projectId`           | Get a project        |
+| `PUT`    | `/api/v1/projects/:projectId`           | Update project name  |
+| `DELETE` | `/api/v1/projects/:projectId`           | Delete project       |
+
+---
+
+## Step 4 — Create an API Key
+
+API keys authenticate requests to the Ingestion Service (trigger endpoint).
+They are scoped to a specific project.
+
+```bash
+curl -X POST http://localhost:3002/api/v1/projects/<projectId>/api-keys \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access_token>" \
+  -d '{ "name": "dev-key" }'
+```
+
+**Response (201):**
+
+```json
+{
+  "id": "key-uuid",
+  "name": "dev-key",
+  "keyPrefix": "relay_abc...",
+  "key": "relay_full-raw-key-shown-only-once",
+  "createdAt": "..."
+}
+```
+
+> **⚠️ The raw `key` is returned only once.** Save it securely — you cannot retrieve it again.
+
+### Other API Key Endpoints
+
+| Method   | Path                                                | Description                           |
+| -------- | --------------------------------------------------- | ------------------------------------- |
+| `GET`    | `/api/v1/projects/:projectId/api-keys`              | List keys (raw key never returned)    |
+| `DELETE` | `/api/v1/projects/:projectId/api-keys/:keyId`       | Revoke a key permanently              |
+
+---
+
+## Step 5 — Create a Workflow
+
+A workflow defines the sequence of steps to execute when triggered.
+
+```bash
+curl -X POST http://localhost:3002/api/v1/projects/<projectId>/workflows \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access_token>" \
+  -d '{
+    "name": "Hello World Workflow",
+    "description": "A simple workflow that calls sayHello",
+    "triggerType": "MANUAL",
+    "definition": {
+      "initialStepId": "step_greet",
+      "steps": [
+        {
+          "id": "step_greet",
+          "name": "Greet the user",
+          "type": "TOOL_CALL",
+          "config": {
+            "toolId": "sayHello",
+            "input": { "message": "Hello from RelayOS!" }
+          }
+        }
+      ]
+    }
+  }'
+```
+
+**Response (201):**
+
+```json
+{
+  "id": "wf-uuid",
+  "projectId": "proj-uuid",
+  "name": "Hello World Workflow",
+  "description": "...",
+  "definition": { ... },
+  "triggerType": "MANUAL",
+  "status": "DRAFT",
+  "version": 1,
+  "createdAt": "...",
+  "updatedAt": "..."
+}
+```
+
+Save the `id` — this is your `workflowId`.
+
+### Workflow Status Lifecycle
+
+Workflows start in `DRAFT` status. **You must activate a workflow before it can be triggered.**
+
+```
+DRAFT → ACTIVE → INACTIVE → ACTIVE → ...
+```
+
+### Other Workflow Endpoints
+
+| Method   | Path                                                                | Description              |
+| -------- | ------------------------------------------------------------------- | ------------------------ |
+| `GET`    | `/api/v1/projects/:projectId/workflows`                             | List workflows           |
+| `GET`    | `/api/v1/projects/:projectId/workflows/:workflowId`                 | Get a workflow           |
+| `PUT`    | `/api/v1/projects/:projectId/workflows/:workflowId`                 | Update (bumps version)   |
+| `DELETE` | `/api/v1/projects/:projectId/workflows/:workflowId`                 | Delete workflow          |
+| `POST`   | `/api/v1/projects/:projectId/workflows/:workflowId/activate`        | Set status → ACTIVE      |
+| `POST`   | `/api/v1/projects/:projectId/workflows/:workflowId/deactivate`      | Set status → INACTIVE    |
+
+---
+
+## Step 6 — Activate the Workflow
+
+```bash
+curl -X POST http://localhost:3002/api/v1/projects/<projectId>/workflows/<workflowId>/activate \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Response (200):** The workflow object with `"status": "ACTIVE"`.
+
+---
+
+## Step 7 — Trigger the Workflow
+
+Triggering is done through the **Ingestion Service** (port `3001`), not the Platform API.
+Authentication uses your **API key** (not your JWT).
+
+```bash
+curl -X POST http://localhost:3001/v1/trigger \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer relay_<your-raw-api-key>" \
+  -d '{
+    "workflowId": "<workflowId>",
+    "payload": {
+      "userId": "usr_123",
+      "event": "user.signup"
+    }
+  }'
+```
+
+**Response (202):**
+
+```json
+{
+  "executionId": "exec-uuid",
+  "status": "PENDING"
+}
+```
+
+The execution is now queued. The workflow worker will pick it up within milliseconds
+and start executing steps.
+
+> **What the trigger does internally:**
+> 1. Validates the API key (SHA-256 hash lookup)
+> 2. Verifies the workflow exists, belongs to the API key's project, and is `ACTIVE`
+> 3. Inserts an `executions` row with status `PENDING`
+> 4. Enqueues a BullMQ job on the `workflow:execute` queue
+> 5. Returns `202 Accepted` immediately
+
+---
+
+## Step 8 — Execution Lifecycle
+
+Once triggered, the execution moves through these states:
+
+```
+PENDING → RUNNING → COMPLETED
+                  → FAILED
+                  → WAITING_APPROVAL → RUNNING → ...
+```
+
+The workflow worker processes each step sequentially, following the `onSuccess` chain
+defined in your workflow definition.
+
+### Execution Steps
+
+Each step in the workflow creates an `execution_steps` row with its own status:
+
+```
+PENDING → RUNNING → COMPLETED
+                  → FAILED → RUNNING (retry)
+                           → SKIPPED (onError: "SKIP")
+                  → WAITING_APPROVAL → COMPLETED (approved)
+                                     → CANCELLED (rejected)
+```
+
+---
+
+## Step Types Reference
+
+### TOOL_CALL
+
+Calls a registered tool via the Tool Runtime service.
+
+```json
+{
+  "id": "step_call_api",
+  "name": "Call external API",
+  "type": "TOOL_CALL",
+  "config": {
+    "toolId": "sayHello",
+    "input": { "message": "Hello!" }
+  },
+  "maxAttempts": 3,
+  "onError": "SKIP",
+  "onSuccess": "next_step_id"
+}
+```
+
+| Config Field  | Type     | Description                          |
+| ------------- | -------- | ------------------------------------ |
+| `toolId`      | `string` | Name of the registered tool          |
+| `input`       | `object` | Input payload passed to the tool     |
+
+### APPROVAL
+
+Pauses execution and waits for a human to approve or reject.
+
+```json
+{
+  "id": "step_review",
+  "name": "Human review",
+  "type": "APPROVAL",
+  "config": {
+    "prompt": "Please review the data before proceeding."
+  },
+  "onSuccess": "next_step_id"
+}
+```
+
+### AI_PLAN
+
+An autonomous agent loop. The LLM decides which tools to call, when to ask
+for approval, and when the goal is complete.
+
+```json
+{
+  "id": "step_agent",
+  "name": "AI agent step",
+  "type": "AI_PLAN",
+  "config": {
+    "goal": "Analyze the incoming data and summarize findings.",
+    "availableTools": [
+      {
+        "name": "sayHello",
+        "description": "Says hello with a custom message.",
+        "inputSchema": {
+          "type": "object",
+          "properties": { "message": { "type": "string" } },
+          "required": ["message"]
+        }
+      }
+    ]
+  },
+  "maxIterations": 10,
+  "onSuccess": "next_step_id"
+}
+```
+
+| Config Field      | Type     | Description                                                          |
+| ----------------- | -------- | -------------------------------------------------------------------- |
+| `goal`            | `string` | Natural language description of what the agent should accomplish     |
+| `availableTools`  | `array`  | Tool definitions the agent can choose from                           |
+
+| Step Field        | Type     | Description                                                          |
+| ----------------- | -------- | -------------------------------------------------------------------- |
+| `maxIterations`   | `number` | Max agent loop iterations before throwing (default: 10)              |
+
+**How the agent loop works:**
+
+1. The workflow engine calls the Agent Service with the goal, available tools, and iteration history
+2. The agent (LLM) picks one action: `tool_call`, `request_approval`, or `complete`
+3. If `tool_call` → the tool is executed; result (or error) is fed back as iteration history
+4. If `request_approval` → execution pauses at `WAITING_APPROVAL` (see Step 9)
+5. If `complete` → the step finishes with the agent's summary
+6. Loop repeats until `complete`, `request_approval`, or `maxIterations` is reached
+
+> **Tool errors don't kill the step.** If a tool returns 500, the error is fed back
+> to the agent as iteration history. The agent can then decide to retry, try a
+> different tool, or ask for human help.
+
+### CONDITION
+
+Evaluates a condition to dynamically branch the workflow.
+
+```json
+{
+  "id": "step_check",
+  "name": "Check user type",
+  "type": "CONDITION",
+  "config": {
+    "operator": "eq",
+    "field": "{{payload.userType}}",
+    "value": "premium"
+  },
+  "onSuccess": "premium_path",
+  "onFailure": "standard_path"
+}
+```
+
+### TRANSFORM
+
+Maps and reshapes data from the execution context.
+
+```json
+{
+  "id": "step_transform",
+  "name": "Build notification payload",
+  "type": "TRANSFORM",
+  "config": {
+    "mapping": {
+      "recipient": "{{payload.email}}",
+      "subject": "Welcome, {{payload.name}}!",
+      "previousResult": "{{steps.step_call_api.output}}"
+    }
+  },
+  "onSuccess": "next_step_id"
+}
+```
+
+### DELAY
+
+Pauses execution for a specified duration.
+
+```json
+{
+  "id": "step_wait",
+  "name": "Wait 5 seconds",
+  "type": "DELAY",
+  "config": {
+    "durationMs": 5000
+  },
+  "onSuccess": "next_step_id"
+}
+```
+
+---
+
+## Step 9 — Approving or Rejecting a Paused Execution
+
+When a step of type `APPROVAL` (or an `AI_PLAN` step that decides `request_approval`)
+fires, the execution pauses at `WAITING_APPROVAL`. A pending approval record is created
+in the database.
+
+### Find the Approval ID
+
+The approval ID is stored in the `approvals` table. You can find it via DB Studio
+(`pnpm db:studio`) or by querying the database. The approval record contains:
+
+- `id` — the approval UUID
+- `executionId` — which execution is paused
+- `stepId` — which step requested approval
+- `prompt` — the human-readable message
+- `status` — `PENDING`, `APPROVED`, or `REJECTED`
+
+### Approve
+
+```bash
+curl -X POST http://localhost:3002/api/v1/approvals/<approvalId>/approve \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Response (200):** `{ "ok": true }`
+
+The execution resumes from the paused step and continues to subsequent steps.
+
+### Reject
+
+```bash
+curl -X POST http://localhost:3002/api/v1/approvals/<approvalId>/reject \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Response (200):** `{ "ok": true }`
+
+The execution is cancelled.
+
+---
+
+## Step 10 — Retry & Failure Handling
+
+Each step can configure retry behavior:
+
+```json
+{
+  "maxAttempts": 3,
+  "onError": "SKIP"
+}
+```
+
+| Field         | Default  | Description                                                      |
+| ------------- | -------- | ---------------------------------------------------------------- |
+| `maxAttempts` | `1`      | Total attempts (including first). `3` = try up to 3 times.       |
+| `onError`     | `"FAIL"` | After all attempts exhaust: `"FAIL"` stops execution, `"SKIP"` continues. |
+
+**Retry timing:** Exponential backoff — attempt N waits `2^N × 1000ms` (2s, 4s, 8s…).
+
+**Durability:** Retries use BullMQ delayed jobs, not in-memory loops. If the worker crashes, the retry job survives in Redis and fires when the delay expires.
+
+Each retry attempt creates a **separate row** in `execution_steps`, giving a full audit trail.
+
+---
+
+## Complete Example: AI_PLAN Workflow
+
+Here's a full end-to-end example that exercises the AI agent loop, tool calls, error
+handling, and approvals.
+
+### 1. Create the workflow
+
+```bash
+curl -X POST http://localhost:3002/api/v1/projects/<projectId>/workflows \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access_token>" \
+  -d '{
+    "name": "AI Workflow Test",
+    "description": "Workflow testing the AI_PLAN step",
+    "triggerType": "MANUAL",
+    "definition": {
+      "initialStepId": "step_ai",
+      "steps": [
+        {
+          "id": "step_ai",
+          "name": "Agent in the loop",
+          "type": "AI_PLAN",
+          "config": {
+            "goal": "Say hello with the message '\''Starting AI workflow'\'', then use the flaky test tool, then request approval.",
+            "availableTools": [
+              {
+                "name": "sayHello",
+                "description": "Says hello with a custom message.",
+                "inputSchema": {
+                  "type": "object",
+                  "properties": { "message": { "type": "string" } },
+                  "required": ["message"]
+                }
+              },
+              {
+                "name": "flaky-test-tool",
+                "description": "A test tool that fails a specified number of times before succeeding.",
+                "inputSchema": {
+                  "type": "object",
+                  "properties": { "failCount": { "type": "number" } },
+                  "required": ["failCount"]
+                }
+              }
+            ]
+          },
+          "maxIterations": 10,
+          "onSuccess": "step_final"
+        },
+        {
+          "id": "step_final",
+          "name": "Final success message",
+          "type": "TOOL_CALL",
+          "config": {
+            "toolId": "sayHello",
+            "input": { "message": "AI_PLAN step completed successfully." }
+          }
+        }
+      ]
+    }
+  }'
+```
+
+### 2. Activate it
+
+```bash
+curl -X POST http://localhost:3002/api/v1/projects/<projectId>/workflows/<workflowId>/activate \
+  -H "Authorization: Bearer <access_token>"
+```
+
+### 3. Trigger it
+
+```bash
+curl -X POST http://localhost:3001/v1/trigger \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer relay_<your-raw-api-key>" \
+  -d '{ "workflowId": "<workflowId>" }'
+```
+
+### 4. Watch the logs
+
+In the workflow-service worker terminal, you'll see:
+
+```
+INFO: Agent decision: tool_call     tool: "sayHello"           iterationCount: 0
+INFO: Agent decision: tool_call     tool: "flaky-test-tool"    iterationCount: 1
+WARN: Tool call failed — feeding error back to agent
+INFO: Agent decision: request_approval                         iterationCount: 2
+INFO: Execution paused at approval step
+```
+
+### 5. Approve it
+
+Find the approval ID in DB Studio or logs, then:
+
+```bash
+curl -X POST http://localhost:3002/api/v1/approvals/<approvalId>/approve \
+  -H "Authorization: Bearer <access_token>"
+```
+
+### 6. Execution completes
+
+```
+INFO: Agent decision: complete      iterationCount: 2
+INFO: Execution completed after resume    completedSteps: ["step_ai", "step_final"]
+```
+
+---
+
+## Architecture Diagram
+
+```
+┌──────────────┐   POST /v1/trigger    ┌───────────────────┐
+│   Client /   │ ────────────────────▸ │ Ingestion Service │
+│   SDK        │   (API key auth)      │     :3001         │
+└──────────────┘                       └────────┬──────────┘
+                                                │ BullMQ enqueue
+                                                ▼
+                                       ┌───────────────────┐
+                                       │ Workflow Service   │
+                                       │ (Worker)  :3003    │
+                                       │                    │
+                                       │ ┌────────────────┐ │
+                                       │ │ execution-     │ │     ┌─────────────────┐
+                                       │ │ worker         │─┼───▸│ Agent Service    │
+                                       │ └───────┬────────┘ │     │     :3004        │
+                                       │         │          │     │ (LLM planning)   │
+                                       │ ┌───────┴────────┐ │     └─────────────────┘
+                                       │ │ retry-worker   │ │
+                                       │ └────────────────┘ │     ┌─────────────────┐
+                                       │                    │───▸│ Tool Runtime     │
+                                       └────────────────────┘     │     :8080        │
+                                                                  └─────────────────┘
+┌──────────────┐   /api/v1/*           ┌───────────────────┐
+│   Dashboard  │ ────────────────────▸ │ Platform API      │
+│   / User     │   (JWT auth)          │     :3002         │
+└──────────────┘                       └───────────────────┘
+```
+
+---
+
+## Environment Variables
+
+| Variable                       | Required | Default                    | Description                            |
+| ------------------------------ | -------- | -------------------------- | -------------------------------------- |
+| `DATABASE_URL`                 | Yes      | —                          | PostgreSQL connection string           |
+| `REDIS_URL`                    | Yes      | —                          | Redis connection string                |
+| `JWT_SECRET`                   | Yes      | —                          | Secret for signing JWTs (min 32 chars) |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Yes*     | —                          | Gemini API key (for AI_PLAN steps)     |
+| `INTERNAL_SERVICE_SECRET`      | Yes      | —                          | Shared secret for inter-service calls  |
+| `PLATFORM_API_PORT`            | No       | `3002`                     | Platform API listen port               |
+| `INGESTION_SERVICE_PORT`       | No       | `3001`                     | Ingestion Service listen port          |
+| `WORKFLOW_SERVICE_PORT`        | No       | `3003`                     | Workflow Service listen port           |
+| `AGENT_SERVICE_PORT`           | No       | `3004`                     | Agent Service listen port              |
+| `TOOL_RUNTIME_PORT`            | No       | `3006`                     | Tool Runtime listen port               |
+| `NODE_ENV`                     | No       | `development`              | Environment mode                       |
+| `LOG_LEVEL`                    | No       | `info`                     | Pino log level                         |
+
+\* Only required if your workflow uses `AI_PLAN` steps.
+
+---
+
+## Troubleshooting
+
+### "Workflow not found or not active"
+The workflow exists but its status is `DRAFT` or `INACTIVE`. Activate it first
+(Step 6 above).
+
+### "Invalid or revoked API key"
+Check that you're using the full raw key (prefixed `relay_`), not the key ID or prefix.
+
+### Execution stays PENDING
+The workflow-service worker is not running. Start it with `pnpm dev:worker` in the
+`apps/workflow-service` directory.
+
+### "Tool execution failed with status 500"
+The tool threw an error. For `TOOL_CALL` steps, configure `maxAttempts` > 1 for automatic
+retries. For `AI_PLAN` steps, the error is automatically fed back to the agent so it can
+decide what to do next.
+
+### Execution stuck at WAITING_APPROVAL
+Find the approval ID in the `approvals` table and approve/reject it (Step 9 above).
