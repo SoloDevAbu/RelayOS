@@ -4,8 +4,8 @@ import {
   ToolCallError,
   ToolRuntimeUnreachableError,
 } from "./tool-call.js";
-import type { WorkflowStep } from "../../types/workflow-definition.js";
-import type { ExecutionContext } from "../../types/execution-context.js";
+import type { WorkflowStep } from "@relayos/types";
+import type { ExecutionContext } from "@relayos/types";
 
 const { mockPost, MockHttpClientError } = vi.hoisted(() => {
   class _MockHttpClientError extends Error {

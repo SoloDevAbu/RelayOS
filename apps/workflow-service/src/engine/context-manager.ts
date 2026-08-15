@@ -2,7 +2,7 @@ import { getRedis } from "@relayos/lib/redis";
 import { db } from "@relayos/db/client";
 import { executions, executionSteps } from "@relayos/db/schema";
 import { eq, and } from "drizzle-orm";
-import type { ExecutionContext, IterationEntry, StepOutput } from "../types/execution-context.js";
+import type { ExecutionContext, IterationEntry, StepOutput } from "@relayos/types";
 
 const CONTEXT_TTL_SECONDS = 3600;
 const CONTEXT_KEY_PREFIX = "exec-ctx:";

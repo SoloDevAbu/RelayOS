@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleApproval } from "./approval.js";
-import type { WorkflowStep } from "../../types/workflow-definition.js";
-import type { ExecutionContext } from "../../types/execution-context.js";
+import type { WorkflowStep } from "@relayos/types";
+import type { ExecutionContext } from "@relayos/types";
 
 const { mockValues, mockInsert } = vi.hoisted(() => {
   const mockValues = vi.fn();

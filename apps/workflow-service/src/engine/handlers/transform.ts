@@ -1,5 +1,5 @@
 import type { StepHandler, StepHandlerResult } from "./types.js";
-import type { ExecutionContext } from "../../types/execution-context.js";
+import type { ExecutionContext } from "@relayos/types";
 
 const TEMPLATE_RE = /\{\{([^}]+)\}\}/g;
 

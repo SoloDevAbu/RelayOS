@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runSteps, type StepRunnerDeps, type ExecutionStepRow } from "./step-runner.js";
-import type { WorkflowDefinition } from "../types/workflow-definition.js";
+import type { WorkflowDefinition } from "@relayos/types";
 
 vi.mock("./handlers/index.js", () => {
   const mockHandlers: Record<string, (...args: unknown[]) => Promise<unknown>> = {};

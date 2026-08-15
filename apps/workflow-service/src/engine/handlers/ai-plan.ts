@@ -1,7 +1,11 @@
 import { db } from "@relayos/db/client";
 import { approvals } from "@relayos/db/schema";
 import type { StepHandler, StepHandlerResult } from "./types.js";
-import { callTool, ToolCallError, ToolRuntimeUnreachableError } from "./call-tool.js";
+import {
+  callTool,
+  ToolCallError,
+  ToolRuntimeUnreachableError,
+} from "./call-tool.js";
 import {
   callAgentPlan,
   type ToolDefinition,
@@ -34,16 +38,20 @@ interface AiPlanConfig {
 function validateConfig(config: Record<string, unknown>): AiPlanConfig {
   const { goal, availableTools } = config as Partial<AiPlanConfig>;
   if (!goal || typeof goal !== "string") {
-    throw new Error("AI_PLAN step config must include a non-empty 'goal' string");
+    throw new Error(
+      "AI_PLAN step config must include a non-empty 'goal' string",
+    );
   }
   if (!Array.isArray(availableTools)) {
-    throw new Error("AI_PLAN step config must include an 'availableTools' array");
+    throw new Error(
+      "AI_PLAN step config must include an 'availableTools' array",
+    );
   }
   return { goal, availableTools };
 }
 
 function buildContextForAgent(
-  executionContext: import("../../types/execution-context.js").ExecutionContext,
+  executionContext: import("@relayos/types").ExecutionContext,
 ): Record<string, unknown> {
   return {
     triggerPayload: executionContext.triggerPayload,
@@ -108,7 +116,11 @@ export const handleAiPlan: StepHandler = async (
 
     if (decision.action === "request_approval") {
       stepLog.info(
-        { action: "request_approval", iterationCount, message: decision.message },
+        {
+          action: "request_approval",
+          iterationCount,
+          message: decision.message,
+        },
         "Agent decision: request_approval",
       );
 
@@ -144,7 +156,12 @@ export const handleAiPlan: StepHandler = async (
     }
 
     stepLog.info(
-      { action: "tool_call", tool: decision.tool, iterationCount, reasoning: decision.reasoning },
+      {
+        action: "tool_call",
+        tool: decision.tool,
+        iterationCount,
+        reasoning: decision.reasoning,
+      },
       "Agent decision: tool_call",
     );
 
@@ -164,7 +181,12 @@ export const handleAiPlan: StepHandler = async (
         toolError instanceof Error ? toolError.message : String(toolError);
 
       stepLog.warn(
-        { tool: decision.tool, error: errorMessage, iterationCount, expected: isExpected },
+        {
+          tool: decision.tool,
+          error: errorMessage,
+          iterationCount,
+          expected: isExpected,
+        },
         "Tool call failed — feeding error back to agent",
       );
 
@@ -180,7 +202,11 @@ export const handleAiPlan: StepHandler = async (
       ];
 
       iterationCount++;
-      await updateIterationHistory(context.executionId, step.id, iterationHistory);
+      await updateIterationHistory(
+        context.executionId,
+        step.id,
+        iterationHistory,
+      );
       continue;
     }
 

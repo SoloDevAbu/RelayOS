@@ -1,5 +1,5 @@
-import type { WorkflowStep } from "../../types/workflow-definition.js";
-import type { ExecutionContext } from "../../types/execution-context.js";
+import type { WorkflowStep } from "@relayos/types";
+import type { ExecutionContext } from "@relayos/types";
 
 export interface StepHandlerResult {
   output: unknown;

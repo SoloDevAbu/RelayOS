@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { handleCondition, getNestedValue } from "./condition.js";
-import type { WorkflowStep } from "../../types/workflow-definition.js";
-import type { ExecutionContext } from "../../types/execution-context.js";
+import type { WorkflowStep } from "@relayos/types";
+import type { ExecutionContext } from "@relayos/types";
 
 function makeStep(config: Record<string, unknown>): WorkflowStep {
   return {

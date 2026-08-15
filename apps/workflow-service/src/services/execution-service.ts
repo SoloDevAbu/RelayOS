@@ -1,7 +1,7 @@
 import { db } from "@relayos/db/client";
 import { executions, executionSteps, workflows } from "@relayos/db/schema";
 import { eq, desc, sql } from "drizzle-orm";
-import type { WorkflowDefinition } from "../types/workflow-definition.js";
+import type { WorkflowDefinition } from "@relayos/types";
 
 export interface ExecutionRow {
   id: string;

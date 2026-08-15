@@ -1,5 +1,5 @@
-import type { WorkflowDefinition, WorkflowStep } from "../types/workflow-definition.js";
-import type { StepOutput } from "../types/execution-context.js";
+import type { WorkflowDefinition, WorkflowStep } from "@relayos/types";
+import type { StepOutput } from "@relayos/types";
 import type { WorkflowRetryJob } from "@relayos/queue";
 import { stepHandlers } from "./handlers/index.js";
 import { decideRetry } from "./retry-policy.js";
