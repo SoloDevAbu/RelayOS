@@ -27,6 +27,7 @@
     "@relayos/db": "workspace:*",
     "@relayos/lib": "workspace:*",
     "@relayos/queue": "workspace:*",
+    "@relayos/types": "workspace:*",
     "@sinclair/typebox": "^0.34.52",
     "ajv-formats": "^3.0.1",
     "dotenv": "^17.4.2",
