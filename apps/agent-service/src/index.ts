@@ -1,6 +1,7 @@
 import "dotenv/config";
 import Fastify from "fastify";
 import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
+import { logger } from "@relayos/lib/logger";
 
 import configPlugin from "./plugins/config.js";
 import sensiblePlugin from "./plugins/sensible.js";
@@ -10,20 +11,7 @@ import { initTracing } from "./tracing/langfuse-client.js";
 
 async function buildApp() {
   const app = Fastify({
-    logger: {
-      level: process.env.LOG_LEVEL ?? "info",
-      ...(process.env.NODE_ENV !== "production"
-        ? {
-            transport: {
-              target: "pino-pretty",
-              options: {
-                translateTime: "HH:MM:ss Z",
-                ignore: "pid,hostname",
-              },
-            },
-          }
-        : {}),
-    },
+    logger,
     trustProxy: true,
     ajv: {
       customOptions: {
