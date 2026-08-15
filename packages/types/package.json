@@ -1,0 +1,17 @@
+{
+  "name": "@relayos/types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript types for RelayOS",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@relayos/typescript-config": "workspace:*"
+  }
+}

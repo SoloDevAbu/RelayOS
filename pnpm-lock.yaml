@@ -276,6 +276,9 @@ importers:
       '@relayos/queue':
         specifier: workspace:*
         version: link:../../packages/queue
+      '@relayos/types':
+        specifier: workspace:*
+        version: link:../../packages/types
       '@sinclair/typebox':
         specifier: ^0.34.52
         version: 0.34.52
@@ -408,6 +411,12 @@ importers:
       bullmq:
         specifier: ^5.81.2
         version: 5.81.2
+    devDependencies:
+      '@relayos/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+
+  packages/types:
     devDependencies:
       '@relayos/typescript-config':
         specifier: workspace:*
