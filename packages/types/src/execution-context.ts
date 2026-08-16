@@ -16,6 +16,7 @@ export interface StepOutput {
 
 export interface ExecutionContext {
   executionId: string;
+  projectId: string;
   triggerPayload: Record<string, unknown> | null;
   steps: StepOutput[];
 }
