@@ -32,6 +32,7 @@ const mockDeps: StepRunnerDeps = {
   transitionStep: vi.fn().mockResolvedValue(undefined),
   getContext: vi.fn().mockResolvedValue({
     executionId: "exec-1",
+    projectId: "project-1",
     triggerPayload: null,
     steps: [],
   }),

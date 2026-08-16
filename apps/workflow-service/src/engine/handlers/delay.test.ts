@@ -5,6 +5,7 @@ import type { ExecutionContext } from "@relayos/types";
 
 const baseContext: ExecutionContext = {
   executionId: "exec-1",
+  projectId: "project-1",
   triggerPayload: null,
   steps: [],
 };

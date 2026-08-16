@@ -29,6 +29,7 @@ function makeExpressionStep(
 
 const baseContext: ExecutionContext = {
   executionId: "exec-1",
+  projectId: "project-1",
   triggerPayload: { env: "production", shouldSendWelcomeEmail: true },
   steps: [
     {

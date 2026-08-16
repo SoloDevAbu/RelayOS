@@ -14,6 +14,7 @@ function makeStep(mapping: Record<string, unknown>): WorkflowStep {
 
 const baseContext: ExecutionContext = {
   executionId: "exec-1",
+  projectId: "project-1",
   triggerPayload: {
     userEmail: "alice@example.com",
     shouldSendWelcomeEmail: true,

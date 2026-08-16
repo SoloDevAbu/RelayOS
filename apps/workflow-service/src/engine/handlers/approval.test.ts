@@ -32,6 +32,7 @@ describe("handleApproval", () => {
 
     const context: ExecutionContext = {
       executionId: "exec-1",
+      projectId: "project-1",
       triggerPayload: { test: true },
       steps: [{ stepId: "s1", output: { done: true }, completedAt: new Date().toISOString() }],
     };
@@ -70,6 +71,7 @@ describe("handleApproval", () => {
 
     const context: ExecutionContext = {
       executionId: "exec-1",
+      projectId: "project-1",
       triggerPayload: null,
       steps: [],
     };

@@ -3,14 +3,23 @@ import { handleAiPlan, AiPlanMaxIterationsError } from "./ai-plan.js";
 import type { WorkflowStep } from "@relayos/types";
 import type { ExecutionContext } from "@relayos/types";
 
-const { mockCallAgentPlan, mockCallTool, mockGetIterationHistory, mockUpdateIterationHistory, mockDbInsert } =
-  vi.hoisted(() => ({
-    mockCallAgentPlan: vi.fn(),
-    mockCallTool: vi.fn(),
-    mockGetIterationHistory: vi.fn().mockResolvedValue([]),
-    mockUpdateIterationHistory: vi.fn().mockResolvedValue(undefined),
-    mockDbInsert: vi.fn(),
-  }));
+const {
+  mockCallAgentPlan,
+  mockCallTool,
+  mockGetIterationHistory,
+  mockUpdateIterationHistory,
+  mockDbInsert,
+  mockRecall,
+  mockQueueAdd,
+} = vi.hoisted(() => ({
+  mockCallAgentPlan: vi.fn(),
+  mockCallTool: vi.fn(),
+  mockGetIterationHistory: vi.fn().mockResolvedValue([]),
+  mockUpdateIterationHistory: vi.fn().mockResolvedValue(undefined),
+  mockDbInsert: vi.fn(),
+  mockRecall: vi.fn().mockResolvedValue([]),
+  mockQueueAdd: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("../../services/agent-service-client.js", () => ({
   callAgentPlan: (...args: unknown[]) => mockCallAgentPlan(...args),
@@ -36,6 +45,21 @@ vi.mock("@relayos/db/schema", () => ({
   approvals: "approvals",
 }));
 
+vi.mock("../../memory/memory-service.js", () => ({
+  recall: (...args: unknown[]) => mockRecall(...args),
+}));
+
+vi.mock("bullmq", () => ({
+  Queue: vi.fn().mockImplementation(() => ({
+    add: (...args: unknown[]) => mockQueueAdd(...args),
+  })),
+}));
+
+vi.mock("@relayos/queue", () => ({
+  QUEUES: { MEMORY_EMBED: "memory-embed" },
+  bullmqRedis: {},
+}));
+
 const baseStep: WorkflowStep = {
   id: "step-ai",
   type: "AI_PLAN",
@@ -55,6 +79,7 @@ const baseStep: WorkflowStep = {
 
 const baseContext: ExecutionContext = {
   executionId: "exec-1",
+  projectId: "project-1",
   triggerPayload: null,
   steps: [],
 };
@@ -63,6 +88,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGetIterationHistory.mockResolvedValue([]);
   mockUpdateIterationHistory.mockResolvedValue(undefined);
+  mockRecall.mockResolvedValue([]);
+  mockQueueAdd.mockResolvedValue(undefined);
 });
 
 describe("handleAiPlan — complete branch", () => {
@@ -78,9 +105,45 @@ describe("handleAiPlan — complete branch", () => {
     expect(result.output).toEqual({
       summary: "Report summarized.",
       reasoning: "Done.",
+      iterationHistory: [],
     });
     expect(result.pause).toBeUndefined();
     expect(mockCallTool).not.toHaveBeenCalled();
+  });
+
+  it("calls recall before calling agent plan", async () => {
+    mockCallAgentPlan.mockResolvedValue({
+      action: "complete",
+      summary: "Done.",
+      reasoning: "Done.",
+    });
+
+    await handleAiPlan(baseStep, baseContext);
+
+    expect(mockRecall).toHaveBeenCalledWith(
+      "Summarize the quarterly report",
+      "exec-1",
+      "project-1",
+      5,
+    );
+  });
+
+  it("passes recalled memories to agent plan", async () => {
+    const recalledMemories = [
+      { content: "Prior tool result", similarity: 0.85 },
+    ];
+    mockRecall.mockResolvedValue(recalledMemories);
+
+    mockCallAgentPlan.mockResolvedValue({
+      action: "complete",
+      summary: "Done.",
+      reasoning: "Used memories.",
+    });
+
+    await handleAiPlan(baseStep, baseContext);
+
+    const callArgs = mockCallAgentPlan.mock.calls[0]![0];
+    expect(callArgs.memories).toEqual(recalledMemories);
   });
 });
 
@@ -121,6 +184,42 @@ describe("handleAiPlan — tool_call branch", () => {
     expect(result.output).toEqual({
       summary: "Found and summarized.",
       reasoning: "Done.",
+      iterationHistory: [
+        {
+          action: "tool_call",
+          tool: "search",
+          input: { query: "quarterly report" },
+          result: { text: "report content" },
+          reasoning: "Need to find the report.",
+        },
+      ],
+    });
+  });
+
+  it("enqueues memory embed job after successful tool call", async () => {
+    mockCallAgentPlan
+      .mockResolvedValueOnce({
+        action: "tool_call",
+        tool: "search",
+        input: { query: "q" },
+        reasoning: "Searching.",
+      })
+      .mockResolvedValueOnce({
+        action: "complete",
+        summary: "Done.",
+        reasoning: "Done.",
+      });
+
+    mockCallTool.mockResolvedValue({ output: { data: "result" } });
+
+    await handleAiPlan(baseStep, baseContext);
+
+    expect(mockQueueAdd).toHaveBeenCalledWith("embed", {
+      content: expect.stringContaining("Tool: search"),
+      scope: "EXECUTION",
+      executionId: "exec-1",
+      projectId: "project-1",
+      sourceStepId: "step-ai",
     });
   });
 

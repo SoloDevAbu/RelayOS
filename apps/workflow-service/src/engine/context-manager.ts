@@ -17,6 +17,7 @@ async function buildContextFromDb(
   const [execution] = await db
     .select({
       id: executions.id,
+      projectId: executions.projectId,
       triggerPayload: executions.triggerPayload,
     })
     .from(executions)
@@ -49,6 +50,7 @@ async function buildContextFromDb(
 
   return {
     executionId,
+    projectId: execution.projectId,
     triggerPayload: execution.triggerPayload as Record<string, unknown> | null,
     steps,
   };

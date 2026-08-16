@@ -53,6 +53,7 @@ const baseStep: WorkflowStep = {
 
 const baseContext: ExecutionContext = {
   executionId: "exec-1",
+  projectId: "project-1",
   triggerPayload: null,
   steps: [],
 };

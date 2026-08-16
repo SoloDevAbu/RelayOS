@@ -28,7 +28,7 @@ vi.mock("@relayos/db/client", () => ({
 }));
 
 vi.mock("@relayos/db/schema", () => ({
-  executions: { id: "executions.id", triggerPayload: "executions.triggerPayload" },
+  executions: { id: "executions.id", projectId: "executions.projectId", triggerPayload: "executions.triggerPayload" },
   executionSteps: {
     executionId: "executionSteps.executionId",
     stepId: "executionSteps.stepId",
@@ -68,6 +68,7 @@ describe("getContext", () => {
   it("returns parsed context from Redis on cache hit", async () => {
     const cached = {
       executionId: "exec-1",
+      projectId: "project-1",
       triggerPayload: { key: "val" },
       steps: [],
     };
@@ -83,7 +84,7 @@ describe("getContext", () => {
   it("falls back to Postgres on cache miss and writes through", async () => {
     mockGet.mockResolvedValue(null);
     setupDbChain(
-      { id: "exec-1", triggerPayload: { foo: "bar" } },
+      { id: "exec-1", projectId: "project-1", triggerPayload: { foo: "bar" } },
       [
         {
           stepId: "step-1",
@@ -120,6 +121,7 @@ describe("updateContext", () => {
   it("appends step output and writes to Redis with TTL", async () => {
     const existing = {
       executionId: "exec-1",
+      projectId: "project-1",
       triggerPayload: null,
       steps: [],
     };
@@ -155,6 +157,7 @@ describe("getIterationHistory", () => {
   it("returns empty array when no entry exists for stepId", async () => {
     const cached = {
       executionId: "exec-1",
+      projectId: "project-1",
       triggerPayload: null,
       steps: [],
     };
@@ -167,6 +170,7 @@ describe("getIterationHistory", () => {
   it("returns iterationHistory from matching step entry", async () => {
     const cached = {
       executionId: "exec-1",
+      projectId: "project-1",
       triggerPayload: null,
       steps: [
         {
@@ -191,6 +195,7 @@ describe("updateIterationHistory", () => {
   it("creates a placeholder step entry when none exists", async () => {
     const cached = {
       executionId: "exec-1",
+      projectId: "project-1",
       triggerPayload: null,
       steps: [],
     };
@@ -208,6 +213,7 @@ describe("updateIterationHistory", () => {
   it("updates iterationHistory on an existing step entry", async () => {
     const cached = {
       executionId: "exec-1",
+      projectId: "project-1",
       triggerPayload: null,
       steps: [
         {
