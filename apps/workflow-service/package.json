@@ -24,6 +24,7 @@
     "@fastify/swagger": "^9.8.1",
     "@fastify/swagger-ui": "^5.2.6",
     "@fastify/type-provider-typebox": "^5.2.0",
+    "@google/genai": "^2.17.1",
     "@relayos/db": "workspace:*",
     "@relayos/lib": "workspace:*",
     "@relayos/queue": "workspace:*",
