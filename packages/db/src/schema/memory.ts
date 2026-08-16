@@ -1,42 +1,46 @@
-// import { vector } from "drizzle-orm/pg-core";
-// import {
-//   pgTable,
-//   pgEnum,
-//   uuid,
-//   text,
-//   timestamp,
-//   jsonb,
-//   index,
-// } from "drizzle-orm/pg-core";
-// import { projects } from "./auth";
-// import { executions } from "./workflow";
+import {
+  pgTable,
+  pgEnum,
+  uuid,
+  text,
+  timestamp,
+  index,
+} from "drizzle-orm/pg-core";
+import { vector } from "drizzle-orm/pg-core";
+import { projects } from "./auth";
+import { executions, executionSteps } from "./workflow";
 
-// export const memoryTypeEnum = pgEnum("memory_type", [
-//   "EXECUTION",
-//   "KNOWLEDGE",
-//   "SUMMARY",
-// ]);
+export const memoryChunkScopeEnum = pgEnum("memory_chunk_scope", [
+  "EXECUTION",
+  "KNOWLEDGE",
+]);
 
-// export const memories = pgTable(
-//   "memories",
-//   {
-//     id: uuid("id").defaultRandom().primaryKey(),
-//     projectId: uuid("project_id")
-//       .references(() => projects.id, { onDelete: "cascade" })
-//       .notNull(),
-//     executionId: uuid("execution_id").references(() => executions.id, {
-//       onDelete: "set null",
-//     }),
-//     content: text("content").notNull(),
-//     embedding: vector("embedding", { dimensions: 1536 }).notNull(), // text-embedding-3-small
-//     type: memoryTypeEnum("type").notNull(),
-//     metadata: jsonb("metadata"),
-//     createdAt: timestamp("created_at").defaultNow().notNull(),
-//   },
-//   (t) => ({
-//     projectIdx: index("idx_memories_project_id").on(t.projectId),
-//     executionIdx: index("idx_memories_execution_id").on(t.executionId),
-//     // pgvector HNSW index — created via raw SQL migration:
-//     // CREATE INDEX idx_memories_embedding ON memories USING hnsw (embedding vector_cosine_ops);
-//   }),
-// );
+export const memoryChunks = pgTable(
+  "memory_chunks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    scope: memoryChunkScopeEnum("scope").notNull(),
+    executionId: uuid("execution_id").references(() => executions.id, {
+      onDelete: "set null",
+    }),
+    projectId: uuid("project_id")
+      .references(() => projects.id, { onDelete: "cascade" })
+      .notNull(),
+    sourceStepId: uuid("source_step_id").references(() => executionSteps.id, {
+      onDelete: "set null",
+    }),
+    content: text("content").notNull(),
+    embedding: vector("embedding", { dimensions: 768 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    scopeExecutionIdx: index("idx_memory_chunks_scope_execution").on(
+      t.scope,
+      t.executionId,
+    ),
+    scopeProjectIdx: index("idx_memory_chunks_scope_project").on(
+      t.scope,
+      t.projectId,
+    ),
+  }),
+);
