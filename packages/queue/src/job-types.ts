@@ -14,3 +14,11 @@ export interface WorkflowRetryJob {
   stepId: string;
   attempt: number;
 }
+
+export interface MemoryEmbedJob {
+  content: string;
+  scope: "EXECUTION" | "KNOWLEDGE";
+  executionId?: string;
+  projectId: string;
+  sourceStepId?: string;
+}
