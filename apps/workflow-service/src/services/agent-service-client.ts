@@ -19,7 +19,7 @@ export interface AgentPlanRequest {
   goal: string;
   context: Record<string, unknown>;
   availableTools: ToolDefinition[];
-  memories: [];
+  memories: { content: string; similarity: number }[];
   iterationHistory: IterationEntry[];
 }
 

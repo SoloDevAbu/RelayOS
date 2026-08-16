@@ -31,6 +31,7 @@ const schema = Type.Object({
   TOOL_RUNTIME_URL: Type.String({ default: "http://localhost:8080" }),
   WORKER_CONCURRENCY: Type.Number({ default: 5 }),
   INTERNAL_SERVICE_SECRET: Type.String({ default: "local-dev-secret-change-this-in-production" }),
+  GOOGLE_GENERATIVE_AI_API_KEY: Type.String(),
 });
 
 export type AppConfig = Static<typeof schema>;
