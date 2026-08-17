@@ -2,6 +2,7 @@ import type { WorkflowDefinition, WorkflowStep } from "@relayos/types";
 import type { StepOutput } from "@relayos/types";
 import type { WorkflowRetryJob } from "@relayos/queue";
 import { stepHandlers } from "./handlers/index.js";
+import { ToolCallError } from "./handlers/tool-call.js";
 import { decideRetry } from "./retry-policy.js";
 import type { transitionStep as TransitionStepFn } from "./state-machine.js";
 import type { getContext as GetContextFn, updateContext as UpdateContextFn } from "./context-manager.js";
@@ -107,7 +108,7 @@ export async function runSteps(
 
     try {
       const context = await deps.getContext(executionId);
-      const result = await handler(step, context);
+      const result = await handler(step, context, row.attempt);
 
       if (result.pause) {
         await deps.transitionStep(row.id, "RUNNING", "WAITING_APPROVAL");
@@ -143,10 +144,13 @@ export async function runSteps(
         completedAt: new Date(),
       });
 
+      const retryable = error instanceof ToolCallError ? error.retryable : undefined;
+
       const decision = decideRetry(
         {
           maxAttempts: step.maxAttempts ?? 1,
           onError: step.onError ?? "FAIL",
+          retryable,
         },
         row.attempt,
       );
