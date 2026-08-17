@@ -26,6 +26,7 @@
     "@relayos/db": "workspace:*",
     "@relayos/lib": "workspace:*",
     "@sinclair/typebox": "^0.34.52",
+    "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "dotenv": "^17.4.2",
     "drizzle-orm": "1.0.0-rc.4",

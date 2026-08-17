@@ -42,6 +42,9 @@ const schema = Type.Object({
   // Internal service communication
   WORKFLOW_SERVICE_URL: Type.String({ default: "http://localhost:3003" }),
   INTERNAL_SERVICE_SECRET: Type.String({ default: "local-dev-secret-change-this-in-production" }),
+
+  // Encryption — 32-byte AES-256-GCM key stored as 64 hex chars
+  ENCRYPTION_MASTER_KEY: Type.String({ minLength: 64, maxLength: 64 }),
 });
 
 export type AppConfig = Static<typeof schema>;
