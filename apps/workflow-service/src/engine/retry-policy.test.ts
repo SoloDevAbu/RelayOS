@@ -6,6 +6,7 @@ interface TestCase {
   maxAttempts: number;
   onError: "FAIL" | "SKIP";
   attempt: number;
+  retryable?: boolean;
   expected: RetryDecision;
 }
 
@@ -105,13 +106,38 @@ const cases: TestCase[] = [
     attempt: 4,
     expected: { action: "retry", delayMs: 16000 },
   },
+  // ── retryable: false — bypasses retry budget ─────────────────────────────
+  {
+    desc: "retryable=false + onError FAIL → fail immediately regardless of attempt budget",
+    maxAttempts: 3,
+    onError: "FAIL",
+    retryable: false,
+    attempt: 1,
+    expected: { action: "fail" },
+  },
+  {
+    desc: "retryable=false + onError SKIP → skip immediately regardless of attempt budget",
+    maxAttempts: 3,
+    onError: "SKIP",
+    retryable: false,
+    attempt: 1,
+    expected: { action: "skip" },
+  },
+  {
+    desc: "retryable=false on first attempt of 5 → fail (doesn't burn through retries)",
+    maxAttempts: 5,
+    onError: "FAIL",
+    retryable: false,
+    attempt: 1,
+    expected: { action: "fail" },
+  },
 ];
 
 describe("decideRetry", () => {
   for (const tc of cases) {
     it(tc.desc, () => {
       const result = decideRetry(
-        { maxAttempts: tc.maxAttempts, onError: tc.onError },
+        { maxAttempts: tc.maxAttempts, onError: tc.onError, retryable: tc.retryable },
         tc.attempt,
       );
       expect(result).toEqual(tc.expected);
