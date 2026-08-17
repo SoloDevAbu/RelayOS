@@ -117,6 +117,9 @@ importers:
       '@sinclair/typebox':
         specifier: ^0.34.52
         version: 0.34.52
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
       ajv-formats:
         specifier: ^3.0.1
         version: 3.0.1(ajv@8.20.0)
@@ -209,15 +212,30 @@ importers:
 
   apps/tool-runtime:
     dependencies:
+      '@relayos/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@relayos/lib':
         specifier: workspace:*
         version: link:../../packages/lib
+      '@relayos/types':
+        specifier: workspace:*
+        version: link:../../packages/types
       '@sinclair/typebox':
         specifier: ^0.34.52
         version: 0.34.52
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
+      ajv-formats:
+        specifier: ^3.0.1
+        version: 3.0.1(ajv@8.20.0)
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
+      drizzle-orm:
+        specifier: 1.0.0-rc.4
+        version: 1.0.0-rc.4(@neondatabase/serverless@1.1.0)(@sinclair/typebox@0.34.52)(@types/pg@8.20.0)(pg@8.22.0)(zod@4.4.3)
       fastify:
         specifier: ^5.10.0
         version: 5.10.0
