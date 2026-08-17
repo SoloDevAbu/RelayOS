@@ -137,13 +137,13 @@ The `tool-runtime` service (`apps/tool-runtime`) is a minimal Fastify server on 
 ### Endpoint
 
 ```
-POST /v1/tools/:toolId/execute
+POST /internal/execute
 ```
 
 **Body:**
 
 ```json
-{ "input": { ... }, "executionId": "exec-abc" }
+{ "toolId": "my-tool", "input": { ... }, "executionId": "exec-abc", "stepId": "step-1", "attempt": 1 }
 ```
 
 **Response (200):**
@@ -152,7 +152,7 @@ POST /v1/tools/:toolId/execute
 { "output": { ... } }
 ```
 
-Tools are registered in an in-memory registry at startup. A `flaky-test-tool` fixture is included for testing the retry path end-to-end — see the source for usage.
+Tools are registered via the Platform API and stored in the database. The Tool Runtime acts as a proxy, fetching tool credentials securely, validating input schemas, and executing the webhooks. A `flaky-test-tool` fixture is included for testing the retry path end-to-end — see the source for usage.
 
 ## Developing and Testing locally
 

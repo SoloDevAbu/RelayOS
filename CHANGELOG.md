@@ -6,6 +6,20 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Platform API & Tool Runtime (`apps/api`, `apps/tool-runtime`) — Phase 10: Tool Registry + Hardened Webhook Execution**
+  - Replaced the hardcoded in-memory tool registry with a real, user-owned tool registration system backed by PostgreSQL.
+  - Added new Database Schema for `toolDefinitions` with `invocationType` (LOCAL, WEBHOOK), `authType`, and separate `toolCredentials` table.
+  - Added AES-256-GCM encryption module in `packages/lib/src/crypto` to encrypt tool credentials at rest.
+  - Created Tool CRUD endpoints (`/projects/:projectId/tools`) in the Platform API with strict TypeBox validation.
+  - Restructured `tool-runtime` to pull configurations from the database and decrypt credentials on-demand.
+  - Added Ajv-based input schema validation in `tool-runtime` to fail fast on malformed inputs before initiating network calls.
+  - Implemented `webhook-executor` with `AbortController` timeouts and standard `Idempotency-Key` headers for robust external API calls.
+  - Added a `result-shaper` in `tool-runtime` to standardize output as `ToolExecutionResult`, intelligently setting `retryable: true` for 5xx/network errors and `retryable: false` for 4xx errors.
+  - Updated Workflow Service's retry policy to bypass retry budgets entirely on `retryable: false` tool call errors.
+
+
+### Added
+
 - **Platform API (`apps/api`)**
   - Initialized Fastify server with `TypeBoxTypeProvider` for robust runtime validation and type inference.
   - Configured core plugins: Database, JWT authentication, CORS, Helmet (security headers), Rate Limiting, Error Handling, and Swagger/OpenAPI documentation.

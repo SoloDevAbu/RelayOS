@@ -695,12 +695,13 @@ INFO: Execution completed after resume    completedSteps: ["step_ai", "step_fina
 | `REDIS_URL`                    | Yes      | —                          | Redis connection string                |
 | `JWT_SECRET`                   | Yes      | —                          | Secret for signing JWTs (min 32 chars) |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | Yes*     | —                          | Gemini API key (for AI_PLAN steps)     |
+| `ENCRYPTION_MASTER_KEY`        | Yes      | —                          | 64-character hex key for tool credentials |
 | `INTERNAL_SERVICE_SECRET`      | Yes      | —                          | Shared secret for inter-service calls  |
 | `PLATFORM_API_PORT`            | No       | `3002`                     | Platform API listen port               |
 | `INGESTION_SERVICE_PORT`       | No       | `3001`                     | Ingestion Service listen port          |
 | `WORKFLOW_SERVICE_PORT`        | No       | `3003`                     | Workflow Service listen port           |
 | `AGENT_SERVICE_PORT`           | No       | `3004`                     | Agent Service listen port              |
-| `TOOL_RUNTIME_PORT`            | No       | `3006`                     | Tool Runtime listen port               |
+| `TOOL_RUNTIME_PORT`            | No       | `8080`                     | Tool Runtime listen port               |
 | `NODE_ENV`                     | No       | `development`              | Environment mode                       |
 | `LOG_LEVEL`                    | No       | `info`                     | Pino log level                         |
 
