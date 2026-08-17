@@ -9,3 +9,9 @@ export type {
   StepOutput,
   ExecutionContext,
 } from "./execution-context.js";
+
+export type {
+  ToolInvocationType,
+  ToolAuthType,
+  ToolExecutionResult,
+} from "./tool.js";
