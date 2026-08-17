@@ -7,17 +7,24 @@ import {
   integer,
   timestamp,
   jsonb,
-  boolean,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { projects } from "./auth";
 import { executions } from "./workflow";
 
-export const executorTypeEnum = pgEnum("executor_type", [
-  "HTTP",
-  "BUILT_IN",
-  "SDK",
+export const invocationTypeEnum = pgEnum("invocation_type", [
+  "LOCAL",
+  "WEBHOOK",
 ]);
+
+export const authTypeEnum = pgEnum("auth_type", [
+  "NONE",
+  "BEARER",
+  "API_KEY_HEADER",
+  "BASIC",
+]);
+
 export const toolExecStatusEnum = pgEnum("tool_exec_status", [
   "SUCCESS",
   "FAILED",
@@ -33,19 +40,37 @@ export const toolDefinitions = pgTable(
       .notNull(),
     name: varchar("name", { length: 255 }).notNull(),
     description: text("description").notNull(),
-    inputSchema: jsonb("input_schema").notNull(), // JSON Schema (Ajv-compatible)
-    outputSchema: jsonb("output_schema"), // optional, for documentation
-    executorType: executorTypeEnum("executor_type").notNull(),
-    executorConfig: jsonb("executor_config").notNull(), // { url, method, headers, bodyTemplate } for HTTP
+    inputSchema: jsonb("input_schema").notNull(),
+    outputSchema: jsonb("output_schema"),
+    invocationType: invocationTypeEnum("invocation_type").notNull(),
+    url: text("url"),
+    httpMethod: varchar("http_method", { length: 10 })
+      .default("POST")
+      .notNull(),
     timeoutMs: integer("timeout_ms").default(30000).notNull(),
-    enabled: boolean("enabled").default(true).notNull(),
+    authType: authTypeEnum("auth_type").default("NONE").notNull(),
+    authHeaderName: varchar("auth_header_name", { length: 255 }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => ({
     projectIdx: index("idx_tool_definitions_project_id").on(t.projectId),
+    projectNameIdx: uniqueIndex("idx_tool_definitions_project_name").on(
+      t.projectId,
+      t.name,
+    ),
   }),
 );
+
+export const toolCredentials = pgTable("tool_credentials", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  toolId: uuid("tool_id")
+    .references(() => toolDefinitions.id, { onDelete: "cascade" })
+    .notNull()
+    .unique(),
+  encryptedValue: text("encrypted_value").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 export const toolExecutions = pgTable(
   "tool_executions",
