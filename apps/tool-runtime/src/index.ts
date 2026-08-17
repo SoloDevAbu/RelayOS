@@ -24,7 +24,7 @@ async function start(): Promise<void> {
     },
   });
 
-  await app.register(executeRoute, { prefix: "/v1" });
+  await app.register(executeRoute, { prefix: "/internal" });
 
   app.get("/health", async () => ({ status: "ok" }));
 
