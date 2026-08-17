@@ -410,12 +410,13 @@ for approval, and when the goal is complete.
 
 **How the agent loop works:**
 
-1. The workflow engine calls the Agent Service with the goal, available tools, and iteration history
-2. The agent (LLM) picks one action: `tool_call`, `request_approval`, or `complete`
-3. If `tool_call` → the tool is executed; result (or error) is fed back as iteration history
-4. If `request_approval` → execution pauses at `WAITING_APPROVAL` (see Step 9)
-5. If `complete` → the step finishes with the agent's summary
-6. Loop repeats until `complete`, `request_approval`, or `maxIterations` is reached
+1. The engine recalls the top-5 relevant memory chunks (from this execution + project knowledge) via pgvector similarity search
+2. The workflow engine calls the Agent Service with the goal, available tools, iteration history, and recalled memories
+3. The agent (LLM) picks one action: `tool_call`, `request_approval`, or `complete`
+4. If `tool_call` → the tool is executed; result (or error) is fed back as iteration history; a durable embed job is enqueued to store the result for future recall
+5. If `request_approval` → execution pauses at `WAITING_APPROVAL` (see Step 9)
+6. If `complete` → the step finishes with the agent's summary
+7. Loop repeats from step 1 until `complete`, `request_approval`, or `maxIterations` is reached
 
 > **Tool errors don't kill the step.** If a tool returns 500, the error is fed back
 > to the agent as iteration history. The agent can then decide to retry, try a
@@ -673,8 +674,11 @@ INFO: Execution completed after resume    completedSteps: ["step_ai", "step_fina
                                        │ │ retry-worker   │ │
                                        │ └────────────────┘ │     ┌─────────────────┐
                                        │                    │───▸│ Tool Runtime     │
-                                       └────────────────────┘     │     :8080        │
-                                                                  └─────────────────┘
+                                       │ ┌────────────────┐ │     │     :8080        │
+                                       │ │ memory-embed-  │ │     └─────────────────┘
+                                       │ │ worker         │─┼───▸ pgvector (Postgres)
+                                       │ └────────────────┘ │     (memory_chunks)
+                                       └────────────────────┘
 ┌──────────────┐   /api/v1/*           ┌───────────────────┐
 │   Dashboard  │ ────────────────────▸ │ Platform API      │
 │   / User     │   (JWT auth)          │     :3002         │
@@ -724,3 +728,11 @@ decide what to do next.
 
 ### Execution stuck at WAITING_APPROVAL
 Find the approval ID in the `approvals` table and approve/reject it (Step 9 above).
+
+### AI_PLAN step output looks generic (agent ignores prior context)
+Memory recall requires the `memory_chunks` table to exist and the pgvector extension to be enabled. Run `pnpm db:migrate` inside `packages/db` if you haven't already. Check that `GOOGLE_GENERATIVE_AI_API_KEY` is set — it is used for both LLM planning and embedding.
+
+To verify the memory-embed worker is running, check workflow-service worker logs for:
+```
+Workflow workers started (execution + retry + memory-embed)
+```

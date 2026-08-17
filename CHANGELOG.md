@@ -137,3 +137,34 @@ All notable changes to this project will be documented in this file.
   - `callTool()` inside the AI_PLAN loop is now wrapped in a try/catch. On `ToolCallError` or `ToolRuntimeUnreachableError`, the error is recorded as an iteration history entry (`result: { error: "..." }`) and the loop continues — the agent sees the failure on the next iteration and can retry, pick a different tool, or request human help.
   - Added structured logging of every agent decision (`tool_call`, `complete`, `request_approval`) from within the workflow-service worker, including tool name, iteration count, and reasoning. Previously, agent decisions were only visible in agent-service logs.
   - `iterationHistory` is now included in the step's `output` on both `complete` and `request_approval`, so it is persisted to `execution_steps.output` in PostgreSQL. Previously, iteration history was stored only in Redis and lost when the execution context was deleted in the `finally` block.
+
+### Added
+
+- **Workflow Service (`apps/workflow-service`) — Phase 9: Memory (RAG)**
+  - Added an internal `memory` module (`src/memory/`) providing RAG-backed context recall for AI_PLAN steps. No separate deployable — all logic lives inside workflow-service as a direct dependency.
+  - Added `src/memory/embedding-client.ts`: thin wrapper around the Google Generative AI API (`gemini-embedding-2-preview`) producing 768-dimensional vectors. Single file that imports the `@google/genai` SDK — all embedding calls go through here.
+  - Added `src/memory/memory-service.ts` with two functions:
+    - `recall(query, executionId, projectId, topK)` — embeds the query text, runs a pgvector cosine similarity search scoped to `execution_id = X OR (scope = 'KNOWLEDGE' AND project_id = Y)`, returns the top-K chunks as `{ content, similarity }[]`. Called synchronously inside the AI loop before each agent planning call.
+    - `embed(content, scope, ids)` — embeds text and inserts a `memory_chunks` row. Called by the BullMQ worker, not the loop directly.
+  - Added `src/worker/memory-embed-worker.ts`: third BullMQ Worker in the `PROCESS_TYPE=worker` entrypoint, bound to the `memory:embed` queue. Processor calls `memoryService.embed()` with the job payload.
+  - Updated `src/worker/index.ts`: added `memoryEmbedWorker` alongside `executionWorker` and `retryWorker`. All three share the same Redis connection and shut down gracefully together.
+  - Updated `src/engine/handlers/ai-plan.ts`:
+    - Calls `recall(goal, executionId, projectId, 5)` before every `callAgentPlan()` call; recalled memories are passed as the `memories` array in the planning request (previously hardcoded `[]`).
+    - After each successful tool call, enqueues a durable `memory:embed` job (`scope: EXECUTION`) summarising the tool name, input, and result. Only the enqueue is awaited — the embedding itself is async.
+  - Added `scripts/seed-knowledge-memory.ts`: one-off CLI script for inserting `KNOWLEDGE`-scope memory chunks into a project for testing recall without a prior execution.
+
+- **Database (`packages/db`) — Phase 9: memory_chunks table**
+  - Added `memoryChunkScopeEnum` (`EXECUTION | KNOWLEDGE`) and `memoryChunks` table to `packages/db/src/schema/memory.ts`.
+  - `embedding` column is `vector(768)` — matches `gemini-embedding-2-preview`'s output at `outputDimensionality: 768`.
+  - B-tree indexes on `(scope, execution_id)` and `(scope, project_id)` for pre-filtering before the vector scan.
+  - Migration enables the `vector` extension (`CREATE EXTENSION IF NOT EXISTS vector`) and creates an HNSW cosine-ops index (`idx_memory_chunks_embedding`) for approximate nearest-neighbor search.
+  - Exported from `schema/index.ts`.
+
+- **Queue Package (`packages/queue`) — Phase 9**
+  - Added `MemoryEmbedJob` interface (`content`, `scope`, `executionId?`, `projectId`, `sourceStepId?`). The queue name `MEMORY_EMBED` already existed; this completes the payload contract.
+
+- **Types Package (`packages/types`) — Phase 9**
+  - Added `projectId: string` to `ExecutionContext`. Required for memory scoping — the AI plan handler needs the project ID to include KNOWLEDGE-scope chunks from prior executions in the same project.
+
+- **Infrastructure**
+  - Switched `docker-compose.yml` Postgres image from `postgres:16-alpine` to `pgvector/pgvector:pg16` to support the pgvector extension required by the memory schema.

@@ -65,11 +65,17 @@ Pauses the workflow execution by transitioning the state to `WAITING_APPROVAL` a
 
 ### `AI_PLAN`
 
-An autonomous agent loop powered by an LLM. Instead of executing a fixed action, the engine calls the [Agent Service](/docs/agent-service) in a `while(true)` loop, passing the goal, available tools, execution context, and iteration history. On each iteration the agent decides one action:
+An autonomous agent loop powered by an LLM. Instead of executing a fixed action, the engine calls the [Agent Service](/docs/agent-service) in a `while(true)` loop, passing the goal, available tools, execution context, iteration history, and **recalled memories**. On each iteration the agent decides one action:
 
-- **`tool_call`** → The engine calls the specified tool via the Tool Runtime. If the tool succeeds, the result is added to iteration history. If the tool fails (HTTP 500), the error is fed back to the agent as history so it can replan — tool errors do **not** terminate the step.
+- **`tool_call`** → The engine calls the specified tool via the Tool Runtime. If the tool succeeds, the result is added to iteration history. If the tool fails (HTTP 500), the error is fed back to the agent as history so it can replan — tool errors do **not** terminate the step. After each successful tool call, a durable embed job is enqueued on the `memory:embed` queue to store the result for future recall.
 - **`request_approval`** → The step pauses at `WAITING_APPROVAL`. After approval, the agent loop resumes with the full history intact.
 - **`complete`** → The step finishes with the agent's summary. The full `iterationHistory` is persisted to `execution_steps.output`.
+
+Before each call to the Agent Service, the engine calls `recall()` to retrieve the top-5 most semantically similar memory chunks scoped to:
+- **Execution memory** (`scope = EXECUTION`) — tool results from the current execution.
+- **Knowledge memory** (`scope = KNOWLEDGE`) — pre-seeded project-level context.
+
+Recalled chunks are passed in the `memories` array on the planning request, giving the agent access to prior results and project knowledge without inflating the iteration history.
 
 The loop is bounded by `maxIterations` (default 10). If exceeded, the step throws `AiPlanMaxIterationsError`.
 
@@ -114,14 +120,15 @@ This step will be tried up to 3 times (with 2 s then 4 s delays). If it fails on
 
 ## Worker Architecture
 
-Two BullMQ Workers run inside the same `PROCESS_TYPE=worker` process, sharing a single Redis connection:
+Three BullMQ Workers run inside the same `PROCESS_TYPE=worker` process, sharing a single Redis connection:
 
-| Worker             | Queue              | Responsibility                                                                            |
-| ------------------ | ------------------ | ----------------------------------------------------------------------------------------- |
-| `execution-worker` | `workflow:execute` | Picks up fresh executions and resumed executions, inserts step rows, runs all steps       |
-| `retry-worker`     | `workflow:retry`   | Picks up delayed retry jobs, inserts a new step-attempt row, resumes from the failed step |
+| Worker               | Queue              | Responsibility                                                                              |
+| -------------------- | ------------------ | ------------------------------------------------------------------------------------------- |
+| `execution-worker`   | `workflow:execute` | Picks up fresh executions and resumed executions, inserts step rows, runs all steps         |
+| `retry-worker`       | `workflow:retry`   | Picks up delayed retry jobs, inserts a new step-attempt row, resumes from the failed step   |
+| `memory-embed-worker`| `memory:embed`     | Picks up embed jobs enqueued by the AI_PLAN handler, calls the Gemini embeddings API, inserts `memory_chunks` rows |
 
-Both workers shut down gracefully together on `SIGTERM`/`SIGINT`.
+All three workers shut down gracefully together on `SIGTERM`/`SIGINT`.
 
 ## Tool Runtime
 

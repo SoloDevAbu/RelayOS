@@ -1,0 +1,119 @@
+---
+title: "Memory (RAG)"
+description: "How RelayOS gives AI_PLAN steps access to prior tool results and project-level knowledge via vector similarity search."
+---
+
+# Memory (RAG)
+
+RelayOS provides AI_PLAN steps with a durable memory layer backed by **pgvector** and **Google Gemini embeddings**. The memory system is an internal module of `workflow-service` — no separate service or HTTP boundary.
+
+## Memory Scopes
+
+Every stored memory chunk has a `scope` that determines how it is queried:
+
+| Scope       | Stored when                                 | Recalled when                                          |
+| ----------- | ------------------------------------------- | ------------------------------------------------------ |
+| `EXECUTION` | A tool call succeeds inside an AI_PLAN step | The same execution is still running                    |
+| `KNOWLEDGE` | Seeded manually via script or external write | Any execution belonging to the same project            |
+
+This gives the agent two complementary layers:
+- **Short-term (EXECUTION):** What happened in this run — tool names, inputs, and outputs accumulated so far.
+- **Long-term (KNOWLEDGE):** Pre-loaded facts about the project, domain context, or past successful workflows that should inform every future run.
+
+## How It Works
+
+### During an AI_PLAN loop iteration
+
+```
+Before callAgentPlan():
+  1. embed(goal)                   → query vector
+  2. pgvector cosine search        → top-5 relevant chunks
+  3. pass memories[] to Agent Service
+
+After a successful tool_call:
+  4. enqueue memory:embed job      → durable, non-blocking
+```
+
+**Recall is synchronous** — the loop blocks on it because the agent needs the context _now_ before it decides what to do next.
+
+**Embed is asynchronous** — a BullMQ job is enqueued after the tool result is known, and the loop immediately continues. If the worker process crashes before the job runs, BullMQ delivers it when the process restarts.
+
+### Embedding model
+
+All text-to-vector conversion uses **`gemini-embedding-2-preview`** at `outputDimensionality: 768`. This matches the `vector(768)` column in the `memory_chunks` table. The same API key (`GOOGLE_GENERATIVE_AI_API_KEY`) used for AI_PLAN planning is reused here — no additional credentials needed.
+
+### Vector search
+
+Similarity search uses pgvector's `<=>` cosine distance operator with an **HNSW index** for approximate nearest-neighbor lookup:
+
+```sql
+SELECT content, 1 - (embedding <=> $query_vector::vector) AS similarity
+FROM memory_chunks
+WHERE (scope = 'EXECUTION' AND execution_id = $executionId)
+   OR (scope = 'KNOWLEDGE' AND project_id = $projectId)
+ORDER BY embedding <=> $query_vector::vector
+LIMIT 5
+```
+
+The `WHERE` clause filters to the relevant scope before the vector scan, keeping the search space small even at scale. B-tree indexes on `(scope, execution_id)` and `(scope, project_id)` accelerate this pre-filter.
+
+## Database Schema
+
+```
+memory_chunks
+├── id             uuid (PK)
+├── scope          EXECUTION | KNOWLEDGE
+├── execution_id   uuid FK → executions.id (nullable, SET NULL on delete)
+├── project_id     uuid FK → projects.id   (CASCADE on delete)
+├── source_step_id uuid FK → execution_steps.id (nullable, SET NULL on delete)
+├── content        text    (the raw text that was embedded)
+├── embedding      vector(768)
+└── created_at     timestamp
+
+Indexes:
+  idx_memory_chunks_scope_execution  B-tree  (scope, execution_id)
+  idx_memory_chunks_scope_project    B-tree  (scope, project_id)
+  idx_memory_chunks_embedding        HNSW    (embedding vector_cosine_ops)
+```
+
+> The `vector` extension must be enabled on the database. The migration (`CREATE EXTENSION IF NOT EXISTS vector`) handles this automatically on first run.
+
+## Infrastructure requirement
+
+The Postgres instance must be `pgvector/pgvector:pg16` (or any Postgres 14+ build with pgvector compiled in). The `docker-compose.yml` in this repo already uses the correct image.
+
+## Seeding KNOWLEDGE memories
+
+To pre-load project-level context before running a workflow:
+
+```bash
+npx tsx apps/workflow-service/scripts/seed-knowledge-memory.ts \
+  <projectId> \
+  "This project processes customer onboarding webhooks. The customer.id field is always a UUID."
+```
+
+The script embeds the text and inserts a `KNOWLEDGE`-scope chunk for the given project. Run it as many times as needed with different content strings.
+
+> The script requires `GOOGLE_GENERATIVE_AI_API_KEY` and `DATABASE_URL` set in the environment.
+
+## Module structure
+
+```
+apps/workflow-service/src/memory/
+├── embedding-client.ts   Google GenAI SDK wrapper — getEmbedding(text) → number[]
+├── memory-service.ts     recall() + embed()
+└── index.ts              barrel export
+
+apps/workflow-service/src/worker/
+└── memory-embed-worker.ts  BullMQ processor — calls embed() from job payload
+
+apps/workflow-service/scripts/
+└── seed-knowledge-memory.ts  CLI seed utility
+```
+
+## Environment variables
+
+| Variable                       | Description                                    |
+| ------------------------------ | ---------------------------------------------- |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Required. Used for both planning and embedding |
+| `DATABASE_URL`                 | Required. Must point to a pgvector-enabled PG  |
