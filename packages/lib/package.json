@@ -5,7 +5,8 @@
   "exports": {
     "./redis": "./src/redis.ts",
     "./logger": "./src/logger.ts",
-    "./http-client": "./src/http-client.ts"
+    "./http-client": "./src/http-client.ts",
+    "./crypto": "./src/crypto/encryption.ts"
   },
   "scripts": {
     "test": "vitest run --config vitest.config.ts",
