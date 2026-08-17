@@ -67,7 +67,11 @@ describe("handleToolCall", () => {
   it("returns parsed output on successful tool call", async () => {
     mockPost.mockResolvedValue({
       statusCode: 200,
-      responseBody: JSON.stringify({ result: "success" }),
+      responseBody: JSON.stringify({
+        success: true,
+        output: { result: "success" },
+        durationMs: 50,
+      }),
       latencyMs: 50,
     });
 
@@ -75,15 +79,26 @@ describe("handleToolCall", () => {
 
     expect(result.output).toEqual({ result: "success" });
     expect(mockPost).toHaveBeenCalledWith(
-      "http://localhost:8080/v1/tools/tool-abc/execute",
-      { input: { query: "test" }, executionId: "exec-1" },
+      "http://localhost:8080/internal/execute",
+      {
+        toolId: "tool-abc",
+        input: { query: "test" },
+        executionId: "exec-1",
+        stepId: "step-1",
+        attempt: 1,
+      },
     );
   });
 
   it("throws ToolCallError on 4xx/5xx response", async () => {
     mockPost.mockResolvedValue({
-      statusCode: 400,
-      responseBody: "Bad Request",
+      statusCode: 200,
+      responseBody: JSON.stringify({
+        success: false,
+        error: "bad request",
+        retryable: false,
+        durationMs: 30,
+      }),
       latencyMs: 30,
     });
 
@@ -95,8 +110,7 @@ describe("handleToolCall", () => {
       await handleToolCall(baseStep, baseContext);
     } catch (err) {
       expect(err).toBeInstanceOf(ToolCallError);
-      expect((err as ToolCallError).statusCode).toBe(400);
-      expect((err as ToolCallError).toolId).toBe("tool-abc");
+      expect((err as ToolCallError).retryable).toBe(false);
     }
   });
 

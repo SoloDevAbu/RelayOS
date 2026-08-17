@@ -1,9 +1,11 @@
 import { post, HttpClientError } from "@relayos/lib/http-client";
+import type { ToolExecutionResult } from "@relayos/types";
 
 export class ToolCallError extends Error {
   constructor(
     message: string,
     public readonly toolId: string,
+    public readonly retryable: boolean,
     public readonly statusCode?: number,
     public readonly responseBody?: string,
   ) {
@@ -19,10 +21,6 @@ export class ToolRuntimeUnreachableError extends Error {
   }
 }
 
-export interface CallToolResult {
-  output: Record<string, unknown>;
-}
-
 export function getToolRuntimeUrl(): string {
   return process.env.TOOL_RUNTIME_URL ?? "http://localhost:8080";
 }
@@ -31,27 +29,46 @@ export async function callTool(
   toolId: string,
   input: Record<string, unknown>,
   executionId: string,
-): Promise<CallToolResult> {
-  const url = `${getToolRuntimeUrl()}/v1/tools/${toolId}/execute`;
+  stepId: string,
+  attempt: number,
+): Promise<{ output: unknown; retryable: boolean }> {
+  const url = `${getToolRuntimeUrl()}/internal/execute`;
 
   try {
-    const response = await post(url, { input, executionId });
+    const response = await post(url, {
+      toolId,
+      input,
+      executionId,
+      stepId,
+      attempt,
+    });
 
-    if (response.statusCode >= 400) {
+    let result: ToolExecutionResult;
+    try {
+      result = JSON.parse(response.responseBody) as ToolExecutionResult;
+    } catch {
       throw new ToolCallError(
-        `Tool execution failed with status ${response.statusCode}`,
+        `Tool runtime returned non-JSON response (status ${response.statusCode})`,
         toolId,
+        response.statusCode >= 500,
         response.statusCode,
         response.responseBody,
       );
     }
 
-    const output = JSON.parse(response.responseBody) as Record<string, unknown>;
-    return { output };
-  } catch (error) {
-    if (error instanceof ToolCallError) {
-      throw error;
+    if (result.success) {
+      return { output: result.output, retryable: false };
     }
+
+    throw new ToolCallError(
+      result.error,
+      toolId,
+      result.retryable,
+      result.statusCode,
+      response.responseBody,
+    );
+  } catch (error) {
+    if (error instanceof ToolCallError) throw error;
 
     if (error instanceof HttpClientError) {
       throw new ToolRuntimeUnreachableError(

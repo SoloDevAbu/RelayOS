@@ -10,4 +10,5 @@ export interface StepHandlerResult {
 export type StepHandler = (
   step: WorkflowStep,
   context: ExecutionContext,
+  attempt?: number,
 ) => Promise<StepHandlerResult>;
