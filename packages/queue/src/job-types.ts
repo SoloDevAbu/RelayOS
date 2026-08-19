@@ -22,3 +22,24 @@ export interface MemoryEmbedJob {
   projectId: string;
   sourceStepId?: string;
 }
+
+export interface DlqJob {
+  executionId: string;
+  workflowId: string;
+  projectId: string;
+  stepId: string;
+  stepType: string;
+  executionStepRowId: string;
+  attempt: number;
+  onError: "FAIL" | "SKIP";
+  isSaga: boolean;
+  failureError: string;
+  failedAt: string;
+  iterationHistory?: unknown[];
+}
+
+export const DLQ_DEFAULT_JOB_OPTIONS = {
+  removeOnComplete: false,
+  removeOnFail: false,
+  attempts: 1,
+} as const;
