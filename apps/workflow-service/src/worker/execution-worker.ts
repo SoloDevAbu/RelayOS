@@ -1,7 +1,7 @@
 import type { Job } from "bullmq";
 import { Queue } from "bullmq";
-import type { WorkflowExecuteJob, WorkflowRetryJob } from "@relayos/queue";
-import { QUEUES, bullmqRedis } from "@relayos/queue";
+import type { WorkflowExecuteJob, WorkflowRetryJob, DlqJob } from "@relayos/queue";
+import { QUEUES, bullmqRedis, DLQ_DEFAULT_JOB_OPTIONS } from "@relayos/queue";
 import { createLogger } from "@relayos/lib/logger";
 import {
   getExecution,
@@ -27,6 +27,15 @@ const retryQueue = new Queue<WorkflowRetryJob>(QUEUES.WORKFLOW_RETRY, {
 
 async function enqueueRetry(job: WorkflowRetryJob, delayMs: number): Promise<void> {
   await retryQueue.add("retry", job, { delay: delayMs });
+}
+
+const dlqQueue = new Queue<DlqJob>(QUEUES.WORKFLOW_DLQ, {
+  connection: bullmqRedis,
+  defaultJobOptions: DLQ_DEFAULT_JOB_OPTIONS,
+});
+
+async function enqueueDlq(job: DlqJob): Promise<void> {
+  await dlqQueue.add("dead-letter", job);
 }
 
 async function findApprovalStepRowId(executionId: string, stepId: string): Promise<string | null> {
@@ -162,6 +171,7 @@ export async function processExecution(
           getContext,
           updateContext,
           enqueueRetry,
+          enqueueDlq,
         },
         { startFromStepId: startStepId },
       );
@@ -175,6 +185,11 @@ export async function processExecution(
 
       if (result.retryEnqueued) {
         log.info({ completedSteps: result.completedSteps }, "Step enqueued for retry");
+        return;
+      }
+
+      if (result.dlqEnqueued) {
+        log.info({ completedSteps: result.completedSteps }, "Step sent to DLQ — execution remains RUNNING");
         return;
       }
 
@@ -206,6 +221,7 @@ export async function processExecution(
           getContext,
           updateContext,
           enqueueRetry,
+          enqueueDlq,
         },
       );
 
@@ -218,6 +234,11 @@ export async function processExecution(
 
       if (result.retryEnqueued) {
         log.info({ completedSteps: result.completedSteps }, "Step enqueued for retry — execution remains RUNNING");
+        return;
+      }
+
+      if (result.dlqEnqueued) {
+        log.info({ completedSteps: result.completedSteps }, "Step sent to DLQ — execution remains RUNNING");
         return;
       }
 

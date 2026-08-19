@@ -19,8 +19,13 @@ vi.mock("../services/execution-service.js", () => ({
 }));
 
 vi.mock("@relayos/queue", () => ({
-  QUEUES: { WORKFLOW_EXECUTE: "workflow-execute", WORKFLOW_RETRY: "workflow-retry" },
+  QUEUES: {
+    WORKFLOW_EXECUTE: "workflow-execute",
+    WORKFLOW_RETRY: "workflow-retry",
+    WORKFLOW_DLQ: "workflow-dlq",
+  },
   bullmqRedis: {},
+  DLQ_DEFAULT_JOB_OPTIONS: { removeOnComplete: false, removeOnFail: false, attempts: 1 },
   Queue: class {
     add = vi.fn().mockResolvedValue(undefined);
   },

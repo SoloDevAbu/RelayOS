@@ -1,11 +1,12 @@
 import { Worker } from "bullmq";
-import { QUEUES, bullmqRedis, type WorkflowExecuteJob, type WorkflowRetryJob, type MemoryEmbedJob } from "@relayos/queue";
+import { QUEUES, bullmqRedis, type WorkflowExecuteJob, type WorkflowRetryJob, type MemoryEmbedJob, type DlqJob } from "@relayos/queue";
 import { disconnectBullmqRedis } from "@relayos/queue";
 import { disconnectRedis } from "@relayos/lib/redis";
 import { logger } from "@relayos/lib/logger";
 import { processExecution } from "./execution-worker.js";
 import { processRetry } from "./retry-worker.js";
 import { processMemoryEmbed } from "./memory-embed-worker.js";
+import { processDlq } from "./dlq-worker.js";
 
 const CONCURRENCY = Number(process.env.WORKER_CONCURRENCY ?? "5");
 
@@ -33,6 +34,15 @@ const memoryEmbedWorker = new Worker<MemoryEmbedJob>(
   {
     connection: bullmqRedis,
     concurrency: CONCURRENCY,
+  },
+);
+
+const dlqWorker = new Worker<DlqJob>(
+  QUEUES.WORKFLOW_DLQ,
+  processDlq,
+  {
+    connection: bullmqRedis,
+    concurrency: 1,
   },
 );
 
@@ -72,6 +82,18 @@ memoryEmbedWorker.on("error", (err) => {
   logger.error({ err }, "Memory embed worker error");
 });
 
+dlqWorker.on("completed", (job) => {
+  logger.info({ jobId: job?.id }, "DLQ job completed");
+});
+
+dlqWorker.on("failed", (job, err) => {
+  logger.error({ jobId: job?.id, err }, "DLQ job failed");
+});
+
+dlqWorker.on("error", (err) => {
+  logger.error({ err }, "DLQ worker error");
+});
+
 let shuttingDown = false;
 
 async function shutdown(signal: string): Promise<void> {
@@ -83,6 +105,7 @@ async function shutdown(signal: string): Promise<void> {
     executionWorker.close(),
     retryWorker.close(),
     memoryEmbedWorker.close(),
+    dlqWorker.close(),
   ]);
   await disconnectBullmqRedis();
   await disconnectRedis();
@@ -95,5 +118,5 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 
 logger.info(
   { concurrency: CONCURRENCY },
-  "Workflow workers started (execution + retry + memory-embed)",
+  "Workflow workers started (execution + retry + memory-embed + dlq)",
 );

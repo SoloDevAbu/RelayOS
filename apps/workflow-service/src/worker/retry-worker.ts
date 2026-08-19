@@ -1,7 +1,7 @@
 import type { Job } from "bullmq";
 import { Queue } from "bullmq";
-import type { WorkflowRetryJob } from "@relayos/queue";
-import { QUEUES, bullmqRedis } from "@relayos/queue";
+import type { WorkflowRetryJob, DlqJob } from "@relayos/queue";
+import { QUEUES, bullmqRedis, DLQ_DEFAULT_JOB_OPTIONS } from "@relayos/queue";
 import { createLogger } from "@relayos/lib/logger";
 import {
   getExecution,
@@ -23,6 +23,15 @@ const retryQueue = new Queue<WorkflowRetryJob>(QUEUES.WORKFLOW_RETRY, {
 
 async function enqueueRetry(job: WorkflowRetryJob, delayMs: number): Promise<void> {
   await retryQueue.add("retry", job, { delay: delayMs });
+}
+
+const dlqQueue = new Queue<DlqJob>(QUEUES.WORKFLOW_DLQ, {
+  connection: bullmqRedis,
+  defaultJobOptions: DLQ_DEFAULT_JOB_OPTIONS,
+});
+
+async function enqueueDlq(job: DlqJob): Promise<void> {
+  await dlqQueue.add("dead-letter", job);
 }
 
 export async function processRetry(
@@ -93,6 +102,7 @@ export async function processRetry(
       getContext,
       updateContext,
       enqueueRetry,
+      enqueueDlq,
     },
     { startFromStepId: stepId },
   );
@@ -106,6 +116,11 @@ export async function processRetry(
 
   if (result.retryEnqueued) {
     log.info({ attempt }, "Step enqueued for another retry — execution remains RUNNING");
+    return;
+  }
+
+  if (result.dlqEnqueued) {
+    log.info({ attempt }, "Step sent to DLQ — execution remains RUNNING");
     return;
   }
 

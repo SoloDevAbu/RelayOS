@@ -31,7 +31,11 @@ const memoryEmbedQueue = new Queue<MemoryEmbedJob>(QUEUES.MEMORY_EMBED, {
 });
 
 export class AiPlanMaxIterationsError extends Error {
-  constructor(stepId: string, max: number) {
+  constructor(
+    stepId: string,
+    max: number,
+    public readonly iterationHistory: IterationEntry[],
+  ) {
     super(
       `AI_PLAN step "${stepId}" exceeded maxIterations (${max}) without completing`,
     );
@@ -98,7 +102,7 @@ export const handleAiPlan: StepHandler = async (
 
   while (true) {
     if (iterationCount >= maxIterations) {
-      throw new AiPlanMaxIterationsError(step.id, maxIterations);
+      throw new AiPlanMaxIterationsError(step.id, maxIterations, iterationHistory);
     }
 
     const memories = await recall(
