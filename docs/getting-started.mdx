@@ -672,12 +672,15 @@ INFO: Execution completed after resume    completedSteps: ["step_ai", "step_fina
                                        │         │          │     │ (LLM planning)   │
                                        │ ┌───────┴────────┐ │     └─────────────────┘
                                        │ │ retry-worker   │ │
-                                       │ └────────────────┘ │     ┌─────────────────┐
-                                       │                    │───▸│ Tool Runtime     │
-                                       │ ┌────────────────┐ │     │     :8080        │
-                                       │ │ memory-embed-  │ │     └─────────────────┘
-                                       │ │ worker         │─┼───▸ pgvector (Postgres)
-                                       │ └────────────────┘ │     (memory_chunks)
+                                       │ └───────┬────────┘ │     ┌─────────────────┐
+                                       │         │          │───▸│ Tool Runtime     │
+                                       │ ┌───────┴────────┐ │     │     :8080        │
+                                       │ │ dlq-worker     │ │     └─────────────────┘
+                                       │ └────────────────┘ │
+                                       │ ┌────────────────┐ │
+                                       │ │ memory-embed-  │ │─┼───▸ pgvector (Postgres)
+                                       │ │ worker         │ │     (memory_chunks)
+                                       │ └────────────────┘ │
                                        └────────────────────┘
 ┌──────────────┐   /api/v1/*           ┌───────────────────┐
 │   Dashboard  │ ────────────────────▸ │ Platform API      │
@@ -735,5 +738,5 @@ Memory recall requires the `memory_chunks` table to exist and the pgvector exten
 
 To verify the memory-embed worker is running, check workflow-service worker logs for:
 ```
-Workflow workers started (execution + retry + memory-embed)
+Workflow workers started (execution + retry + memory-embed + dlq)
 ```

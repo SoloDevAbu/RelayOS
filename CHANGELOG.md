@@ -178,6 +178,13 @@ All notable changes to this project will be documented in this file.
   - Created Tool CRUD endpoints (`/projects/:projectId/tools`) in the Platform API with strict TypeBox validation.
   - Restructured `tool-runtime` to pull configurations from the database and decrypt credentials on-demand.
   - Added Ajv-based input schema validation in `tool-runtime` to fail fast on malformed inputs before initiating network calls.
+
+- **Workflow Service (`apps/workflow-service`) — Phase 10.5(a): Dead Letter Queue Implementation**
+  - Refactored `step-runner.ts` and `retryPolicy.ts` to implement a "Single Authority" Dead Letter Queue pattern.
+  - Created a new `dlq-worker.ts` to own all terminal step decisions (SKIP step vs FAIL execution).
+  - Added `WORKFLOW_DLQ` queue and `DlqJob` to `packages/queue`.
+  - Added `iterationHistory` capture to `AiPlanMaxIterationsError` so that AI-planner tool call loops that exceed max iterations are preserved in the DLQ for debugging.
+  - Simplified `retryPolicy.ts` to return only `retry` or `dlq` decisions.
   - Implemented `webhook-executor` with `AbortController` timeouts and standard `Idempotency-Key` headers for robust external API calls.
   - Added a `result-shaper` in `tool-runtime` to standardize output as `ToolExecutionResult`, intelligently setting `retryable: true` for 5xx/network errors and `retryable: false` for 4xx errors.
   - Updated Workflow Service's retry policy to bypass retry budgets entirely on `retryable: false` tool call errors.

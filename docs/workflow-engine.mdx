@@ -93,8 +93,9 @@ When a step handler throws, the engine consults a **retry policy** before decidi
 Given a failure on attempt _N_:
 
 - **`N < maxAttempts`** → **retry**: A new delayed job is enqueued on the `workflow:retry` queue with an exponential backoff delay of `2^N × 1000ms` (attempt 1 → 2 s, attempt 2 → 4 s, attempt 3 → 8 s, …). The current job exits cleanly; the execution stays `RUNNING`.
-- **`N ≥ maxAttempts` and `onError: "SKIP"`** → **skip**: The step is transitioned to `SKIPPED` and execution continues with the next step. Downstream steps that reference this step's output will receive `null`.
-- **`N ≥ maxAttempts` and `onError: "FAIL"`** → **fail**: The step stays `FAILED` and the execution transitions to `FAILED`.
+- **`N ≥ maxAttempts`** → **dlq**: A `DlqJob` is enqueued on the `workflow:dlq` queue with the full failure payload. The `dlq-worker` picks it up and makes the final decision based on the `onError` config:
+  - If `onError: "SKIP"`, the worker transitions the step to `SKIPPED` and resumes the execution from the next step.
+  - If `onError: "FAIL"`, the worker transitions the execution to `FAILED`.
 
 ### Retry durability
 
@@ -127,6 +128,7 @@ Three BullMQ Workers run inside the same `PROCESS_TYPE=worker` process, sharing 
 | `execution-worker`   | `workflow:execute` | Picks up fresh executions and resumed executions, inserts step rows, runs all steps         |
 | `retry-worker`       | `workflow:retry`   | Picks up delayed retry jobs, inserts a new step-attempt row, resumes from the failed step   |
 | `memory-embed-worker`| `memory:embed`     | Picks up embed jobs enqueued by the AI_PLAN handler, calls the Gemini embeddings API, inserts `memory_chunks` rows |
+| `dlq-worker`         | `workflow:dlq`     | Picks up dead-letter jobs after retries are exhausted and executes terminal `SKIP` or `FAIL` logic |
 
 All three workers shut down gracefully together on `SIGTERM`/`SIGINT`.
 
@@ -160,7 +162,7 @@ Tools are registered via the Platform API and stored in the database. The Tool R
 # Run the API server (Port 3003)
 npm run dev:api
 
-# Run the background worker (execution + retry workers)
+# Run the background worker (execution + retry + dlq workers)
 npm run dev:worker
 
 # Run tool-runtime (Port 8080)
