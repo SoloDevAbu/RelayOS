@@ -2,6 +2,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runSteps, type StepRunnerDeps, type ExecutionStepRow } from "./step-runner.js";
 import type { WorkflowDefinition } from "@relayos/types";
 
+vi.mock("./handlers/ai-plan.js", () => ({
+  AiPlanMaxIterationsError: class extends Error {
+    constructor(stepId: string, max: number, public readonly iterationHistory: unknown[]) {
+      super(`AI_PLAN step "${stepId}" exceeded maxIterations (${max})`);
+      this.name = "AiPlanMaxIterationsError";
+    }
+  },
+  handleAiPlan: vi.fn(),
+}));
+
 vi.mock("./handlers/index.js", () => {
   const mockHandlers: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
   return {
@@ -27,6 +37,7 @@ function clearHandlers() {
 }
 
 const mockEnqueueRetry = vi.fn().mockResolvedValue(undefined);
+const mockEnqueueDlq = vi.fn().mockResolvedValue(undefined);
 
 const mockDeps: StepRunnerDeps = {
   transitionStep: vi.fn().mockResolvedValue(undefined),
@@ -38,6 +49,7 @@ const mockDeps: StepRunnerDeps = {
   }),
   updateContext: vi.fn().mockResolvedValue(undefined),
   enqueueRetry: mockEnqueueRetry,
+  enqueueDlq: mockEnqueueDlq,
 };
 
 function makeRows(stepIds: string[], attempt = 1): ExecutionStepRow[] {
@@ -221,60 +233,8 @@ describe("runSteps — failure branch: retry", () => {
   });
 });
 
-describe("runSteps — failure branch: skip", () => {
-  it("skips the step and continues to next step when onError=SKIP and exhausted", async () => {
-    let callCount = 0;
-    setHandler("DELAY", async () => {
-      callCount++;
-      if (callCount === 1) throw new Error("flaky");
-      return { output: { ok: true } };
-    });
-
-    const definition: WorkflowDefinition = {
-      initialStepId: "s1",
-      steps: [
-        { id: "s1", type: "DELAY", name: "D1", config: {}, maxAttempts: 1, onError: "SKIP", onSuccess: "s2" },
-        { id: "s2", type: "DELAY", name: "D2", config: {} },
-      ],
-    };
-
-    const result = await runSteps(
-      "exec-1", "wf-1", "proj-1",
-      definition,
-      makeRows(["s1", "s2"], 1),
-      mockDeps,
-    );
-
-    expect(result.success).toBe(true);
-    expect(result.completedSteps).toEqual(["s2"]);
-    expect(mockEnqueueRetry).not.toHaveBeenCalled();
-    expect(mockDeps.transitionStep).toHaveBeenCalledWith(
-      "row-0", "FAILED", "SKIPPED",
-    );
-  });
-
-  it("succeeds with no further steps after a skip on the last step", async () => {
-    setHandler("DELAY", async () => { throw new Error("boom"); });
-
-    const definition: WorkflowDefinition = {
-      initialStepId: "only",
-      steps: [{ id: "only", type: "DELAY", name: "Solo", config: {}, maxAttempts: 1, onError: "SKIP" }],
-    };
-
-    const result = await runSteps(
-      "exec-1", "wf-1", "proj-1",
-      definition,
-      makeRows(["only"], 1),
-      mockDeps,
-    );
-
-    expect(result.success).toBe(true);
-    expect(result.completedSteps).toEqual([]);
-  });
-});
-
-describe("runSteps — failure branch: fail", () => {
-  it("returns failure when onError=FAIL and attempts exhausted", async () => {
+describe("runSteps — failure branch: dlq (retries exhausted)", () => {
+  it("enqueues DLQ job and returns dlqEnqueued=true when onError=FAIL and attempts exhausted", async () => {
     setHandler("DELAY", async () => { throw new Error("fatal"); });
 
     const definition: WorkflowDefinition = {
@@ -290,13 +250,48 @@ describe("runSteps — failure branch: fail", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.failedStepId).toBe("s1");
-    expect(result.error).toBe("fatal");
-    expect(result.retryEnqueued).toBeUndefined();
+    expect(result.dlqEnqueued).toBe(true);
+    expect(result.failedStepId).toBeUndefined();
+    expect(mockEnqueueDlq).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionId: "exec-1",
+        stepId: "s1",
+        onError: "FAIL",
+        isSaga: false,
+        failureError: "fatal",
+      }),
+    );
     expect(mockEnqueueRetry).not.toHaveBeenCalled();
   });
 
-  it("defaults to fail when no maxAttempts or onError specified", async () => {
+  it("enqueues DLQ job with onError=SKIP when attempts exhausted", async () => {
+    setHandler("DELAY", async () => { throw new Error("flaky"); });
+
+    const definition: WorkflowDefinition = {
+      initialStepId: "s1",
+      steps: [{ id: "s1", type: "DELAY", name: "D1", config: {}, maxAttempts: 1, onError: "SKIP", onSuccess: "s2" }],
+    };
+
+    const result = await runSteps(
+      "exec-1", "wf-1", "proj-1",
+      definition,
+      makeRows(["s1"], 1),
+      mockDeps,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.dlqEnqueued).toBe(true);
+    expect(mockEnqueueDlq).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionId: "exec-1",
+        stepId: "s1",
+        onError: "SKIP",
+        isSaga: false,
+      }),
+    );
+  });
+
+  it("defaults onError to FAIL when not specified", async () => {
     setHandler("DELAY", async () => { throw new Error("boom"); });
 
     const definition: WorkflowDefinition = {
@@ -312,7 +307,27 @@ describe("runSteps — failure branch: fail", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.failedStepId).toBe("s1");
+    expect(result.dlqEnqueued).toBe(true);
+    expect(mockEnqueueDlq).toHaveBeenCalledWith(
+      expect.objectContaining({ onError: "FAIL" }),
+    );
+  });
+
+  it("includes failedAt ISO timestamp in DLQ payload", async () => {
+    setHandler("DELAY", async () => { throw new Error("timed out"); });
+
+    const definition: WorkflowDefinition = {
+      initialStepId: "s1",
+      steps: [{ id: "s1", type: "DELAY", name: "D1", config: {}, maxAttempts: 1 }],
+    };
+
+    await runSteps("exec-1", "wf-1", "proj-1", definition, makeRows(["s1"], 1), mockDeps);
+
+    expect(mockEnqueueDlq).toHaveBeenCalledWith(
+      expect.objectContaining({
+        failedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+    );
   });
 });
 

@@ -1,8 +1,9 @@
 import type { WorkflowDefinition, WorkflowStep } from "@relayos/types";
 import type { StepOutput } from "@relayos/types";
-import type { WorkflowRetryJob } from "@relayos/queue";
+import type { WorkflowRetryJob, DlqJob } from "@relayos/queue";
 import { stepHandlers } from "./handlers/index.js";
 import { ToolCallError } from "./handlers/tool-call.js";
+import { AiPlanMaxIterationsError } from "./handlers/ai-plan.js";
 import { decideRetry } from "./retry-policy.js";
 import type { transitionStep as TransitionStepFn } from "./state-machine.js";
 import type { getContext as GetContextFn, updateContext as UpdateContextFn } from "./context-manager.js";
@@ -12,6 +13,7 @@ export interface StepRunnerDeps {
   getContext: typeof GetContextFn;
   updateContext: typeof UpdateContextFn;
   enqueueRetry: (job: WorkflowRetryJob, delayMs: number) => Promise<void>;
+  enqueueDlq: (job: DlqJob) => Promise<void>;
 }
 
 export interface ExecutionStepRow {
@@ -34,6 +36,7 @@ export interface StepRunResult {
   error?: string;
   retryEnqueued?: boolean;
   pausedAtStepId?: string;
+  dlqEnqueued?: boolean;
 }
 
 export async function runSteps(
@@ -149,7 +152,6 @@ export async function runSteps(
       const decision = decideRetry(
         {
           maxAttempts: step.maxAttempts ?? 1,
-          onError: step.onError ?? "FAIL",
           retryable,
         },
         row.attempt,
@@ -170,24 +172,25 @@ export async function runSteps(
         return { success: false, completedSteps, retryEnqueued: true };
       }
 
-      if (decision.action === "skip") {
-        await deps.transitionStep(row.id, "FAILED", "SKIPPED");
+      await deps.enqueueDlq({
+        executionId,
+        workflowId,
+        projectId,
+        stepId: step.id,
+        stepType: step.type,
+        executionStepRowId: row.id,
+        attempt: row.attempt,
+        onError: step.onError ?? "FAIL",
+        isSaga: false,
+        failureError: errorMessage,
+        failedAt: new Date().toISOString(),
+        iterationHistory:
+          error instanceof AiPlanMaxIterationsError
+            ? error.iterationHistory
+            : undefined,
+      });
 
-        if (step.onSuccess) {
-          currentStepId = step.onSuccess;
-          continue;
-        }
-
-        currentStepId = undefined;
-        continue;
-      }
-
-      return {
-        success: false,
-        completedSteps,
-        failedStepId: step.id,
-        error: errorMessage,
-      };
+      return { success: false, completedSteps, dlqEnqueued: true };
     }
   }
 
