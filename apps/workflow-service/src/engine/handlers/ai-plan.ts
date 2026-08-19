@@ -191,6 +191,8 @@ export const handleAiPlan: StepHandler = async (
         decision.tool,
         decision.input,
         context.executionId,
+        step.id,
+        iterationCount + 1,
       );
     } catch (toolError) {
       const isExpected =
