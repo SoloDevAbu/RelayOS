@@ -20,10 +20,18 @@ export const WorkflowStep = Type.Object(
     onSuccess: Type.Optional(Type.String()),
     /** ID of the fallback step on failure */
     onFailure: Type.Optional(Type.String()),
+    /** What to do when all retries are exhausted: fail the execution or skip this step */
+    onError: Type.Optional(Type.Union([Type.Literal("FAIL"), Type.Literal("SKIP")], { default: "FAIL" })),
     /** Max retry attempts (default 3) */
     maxRetries: Type.Optional(Type.Integer({ minimum: 0, maximum: 10 })),
     /** Max agent loop iterations for AI_PLAN steps */
     maxIterations: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+    /** Tool ID to call to undo this step's effect on failure */
+    compensationToolId: Type.Optional(Type.String({ format: "uuid" })),
+    /** Dot-path mapping from this step's output to the compensation tool's input */
+    compensationInputMapping: Type.Optional(
+      Type.Record(Type.String(), Type.String()),
+    ),
   },
   { additionalProperties: false },
 );

@@ -1,5 +1,5 @@
-import { eq, and, count } from "drizzle-orm";
-import { workflows } from "@relayos/db/schema";
+import { eq, and, count, inArray } from "drizzle-orm";
+import { workflows, toolDefinitions } from "@relayos/db/schema";
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type {
   CreateWorkflowBodyType,
@@ -9,6 +9,8 @@ import type {
 } from "../../schemas/workflows.js";
 import { DEFAULT_PAGE, DEFAULT_LIMIT } from "../../constants/index.js";
 import { assertProjectOwnership } from "../../lib/assert-project-ownership.js";
+import type { WorkflowDefinitionType } from "../../schemas/workflows.js";
+import { db } from "@relayos/db/client";
 
 interface MappedWorkflow {
   id: string;
@@ -38,6 +40,49 @@ function mapWorkflow(w: typeof workflows.$inferSelect): MappedWorkflow {
   };
 }
 
+async function validateCompensationTools(
+  definition: WorkflowDefinitionType,
+  projectId: string,
+  reply: FastifyReply,
+): Promise<boolean> {
+  for (const step of definition.steps) {
+    if (step.compensationInputMapping && !step.compensationToolId) {
+      reply.badRequest(
+        `Step "${step.id}" has compensationInputMapping but no compensationToolId`,
+      );
+      return false;
+    }
+  }
+
+  const toolIds = definition.steps
+    .map((s) => s.compensationToolId)
+    .filter((id): id is string => id !== undefined);
+
+  if (toolIds.length === 0) return true;
+
+  const found = await db
+    .select({ id: toolDefinitions.id })
+    .from(toolDefinitions)
+    .where(
+      and(
+        eq(toolDefinitions.projectId, projectId),
+        inArray(toolDefinitions.id, toolIds),
+      ),
+    );
+
+  const foundIds = new Set(found.map((r) => r.id));
+  const missing = toolIds.filter((id) => !foundIds.has(id));
+
+  if (missing.length > 0) {
+    reply.badRequest(
+      `compensationToolId references unknown tool(s) in this project: ${missing.join(", ")}`,
+    );
+    return false;
+  }
+
+  return true;
+}
+
 export async function createWorkflow(
   request: FastifyRequest<{
     Params: { projectId: string };
@@ -51,6 +96,9 @@ export async function createWorkflow(
 
   const owned = await assertProjectOwnership(request, reply, projectId);
   if (!owned) return;
+
+  const valid = await validateCompensationTools(definition, projectId, reply);
+  if (!valid) return;
 
   const inserted = await fastify.db
     .insert(workflows)
@@ -168,6 +216,8 @@ export async function updateWorkflow(
   if (request.body.description !== undefined)
     updates.description = request.body.description;
   if (request.body.definition !== undefined) {
+    const valid = await validateCompensationTools(request.body.definition, projectId, reply);
+    if (!valid) return;
     updates.definition = request.body.definition;
     // Bump version on definition change
     updates.version = existing.version + 1;
