@@ -2,6 +2,8 @@ export type {
   StepType,
   WorkflowStep,
   WorkflowDefinition,
+  CompensationStatus,
+  SagaStatus,
 } from "./workflow-definition.js";
 
 export type {

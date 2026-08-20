@@ -6,6 +6,10 @@ export type StepType =
   | "TRANSFORM"
   | "DELAY";
 
+export type CompensationStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+
+export type SagaStatus = "COMPENSATING" | "COMPENSATED" | "COMPENSATION_FAILED";
+
 export interface WorkflowStep {
   id: string;
   type: StepType;
@@ -16,6 +20,8 @@ export interface WorkflowStep {
   maxAttempts?: number;
   onError?: "FAIL" | "SKIP";
   maxIterations?: number;
+  compensationToolId?: string;
+  compensationInputMapping?: Record<string, string>;
 }
 
 export interface WorkflowDefinition {

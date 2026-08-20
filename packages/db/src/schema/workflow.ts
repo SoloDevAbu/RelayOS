@@ -49,6 +49,17 @@ export const stepTypeEnum = pgEnum("step_type", [
   "TRANSFORM",
   "DELAY",
 ]);
+export const compensationStatusEnum = pgEnum("compensation_status", [
+  "PENDING",
+  "RUNNING",
+  "COMPLETED",
+  "FAILED",
+]);
+export const sagaStatusEnum = pgEnum("saga_status", [
+  "COMPENSATING",
+  "COMPENSATED",
+  "COMPENSATION_FAILED",
+]);
 
 export const workflows = pgTable(
   "workflows",
@@ -88,6 +99,8 @@ export const executions = pgTable(
     startedAt: timestamp("started_at"),
     completedAt: timestamp("completed_at"),
     error: text("error"),
+    isSaga: boolean("is_saga").default(false).notNull(),
+    sagaStatus: sagaStatusEnum("saga_status"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -106,7 +119,7 @@ export const executionSteps = pgTable(
     executionId: uuid("execution_id")
       .references(() => executions.id, { onDelete: "cascade" })
       .notNull(),
-    stepId: varchar("step_id", { length: 255 }).notNull(), // references workflow definition step ID
+    stepId: varchar("step_id", { length: 255 }).notNull(),
     stepType: stepTypeEnum("step_type").notNull(),
     status: stepStatusEnum("status").default("PENDING").notNull(),
     input: jsonb("input"),
@@ -116,6 +129,10 @@ export const executionSteps = pgTable(
     maxAttempts: integer("max_attempts").default(3).notNull(),
     startedAt: timestamp("started_at"),
     completedAt: timestamp("completed_at"),
+    compensationStatus: compensationStatusEnum("compensation_status"),
+    compensationInput: jsonb("compensation_input"),
+    compensationOutput: jsonb("compensation_output"),
+    compensatedAt: timestamp("compensated_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({
