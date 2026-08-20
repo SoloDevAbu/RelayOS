@@ -50,6 +50,8 @@ const mockDeps: StepRunnerDeps = {
   updateContext: vi.fn().mockResolvedValue(undefined),
   enqueueRetry: mockEnqueueRetry,
   enqueueDlq: mockEnqueueDlq,
+  saveCompensationInput: vi.fn().mockResolvedValue(undefined),
+  getExecutionIsSaga: vi.fn().mockResolvedValue(false),
 };
 
 function makeRows(stepIds: string[], attempt = 1): ExecutionStepRow[] {
@@ -370,5 +372,80 @@ describe("runSteps — startFromStepId", () => {
     expect(result.success).toBe(true);
     expect(result.completedSteps).toEqual(["s2", "s3"]);
     expect(mockDeps.transitionStep).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("runSteps — compensation input resolution", () => {
+  it("saves compensation input when a step with compensationToolId completes", async () => {
+    setHandler("TOOL_CALL", async () => ({ output: { orderId: "order-123" } }));
+
+    const definition: WorkflowDefinition = {
+      initialStepId: "s1",
+      steps: [
+        {
+          id: "s1",
+          type: "TOOL_CALL",
+          name: "Cancel Order",
+          config: { toolId: "cancel-order", input: {} },
+          compensationToolId: "uncancel-order",
+          compensationInputMapping: { orderId: "$.orderId" },
+        },
+      ],
+    };
+
+    const rows = makeRows(["s1"]);
+    await runSteps("exec-1", "wf-1", "proj-1", definition, rows, mockDeps);
+
+    expect(mockDeps.saveCompensationInput).toHaveBeenCalledWith(
+      "row-0",
+      { orderId: "order-123" },
+    );
+  });
+
+  it("does not call saveCompensationInput when step has no compensationToolId", async () => {
+    setHandler("DELAY", async () => ({ output: { ok: true } }));
+
+    const definition: WorkflowDefinition = {
+      initialStepId: "s1",
+      steps: [{ id: "s1", type: "DELAY", name: "Delay", config: {} }],
+    };
+
+    await runSteps("exec-1", "wf-1", "proj-1", definition, makeRows(["s1"]), mockDeps);
+
+    expect(mockDeps.saveCompensationInput).not.toHaveBeenCalled();
+  });
+});
+
+describe("runSteps — isSaga in DLQ payload", () => {
+  it("sets isSaga: true in DLQ payload when getExecutionIsSaga returns true", async () => {
+    setHandler("DELAY", async () => { throw new Error("fatal"); });
+    (mockDeps.getExecutionIsSaga as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+
+    const definition: WorkflowDefinition = {
+      initialStepId: "s1",
+      steps: [{ id: "s1", type: "DELAY", name: "D1", config: {}, maxAttempts: 1 }],
+    };
+
+    await runSteps("exec-1", "wf-1", "proj-1", definition, makeRows(["s1"], 1), mockDeps);
+
+    expect(mockEnqueueDlq).toHaveBeenCalledWith(
+      expect.objectContaining({ isSaga: true }),
+    );
+  });
+
+  it("sets isSaga: false in DLQ payload when getExecutionIsSaga returns false", async () => {
+    setHandler("DELAY", async () => { throw new Error("fatal"); });
+    (mockDeps.getExecutionIsSaga as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+    const definition: WorkflowDefinition = {
+      initialStepId: "s1",
+      steps: [{ id: "s1", type: "DELAY", name: "D1", config: {}, maxAttempts: 1 }],
+    };
+
+    await runSteps("exec-1", "wf-1", "proj-1", definition, makeRows(["s1"], 1), mockDeps);
+
+    expect(mockEnqueueDlq).toHaveBeenCalledWith(
+      expect.objectContaining({ isSaga: false }),
+    );
   });
 });

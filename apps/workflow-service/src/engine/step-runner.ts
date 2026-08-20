@@ -5,6 +5,7 @@ import { stepHandlers } from "./handlers/index.js";
 import { ToolCallError } from "./handlers/tool-call.js";
 import { AiPlanMaxIterationsError } from "./handlers/ai-plan.js";
 import { decideRetry } from "./retry-policy.js";
+import { resolveCompensationInput } from "./saga/input-resolver.js";
 import type { transitionStep as TransitionStepFn } from "./state-machine.js";
 import type { getContext as GetContextFn, updateContext as UpdateContextFn } from "./context-manager.js";
 
@@ -14,6 +15,8 @@ export interface StepRunnerDeps {
   updateContext: typeof UpdateContextFn;
   enqueueRetry: (job: WorkflowRetryJob, delayMs: number) => Promise<void>;
   enqueueDlq: (job: DlqJob) => Promise<void>;
+  saveCompensationInput: (stepRowId: string, input: Record<string, unknown>) => Promise<void>;
+  getExecutionIsSaga: (executionId: string) => Promise<boolean>;
 }
 
 export interface ExecutionStepRow {
@@ -123,6 +126,14 @@ export async function runSteps(
         completedAt: new Date(),
       });
 
+      if (step.compensationToolId && step.compensationInputMapping) {
+        const compensationInput = resolveCompensationInput(
+          step.compensationInputMapping,
+          result.output,
+        );
+        await deps.saveCompensationInput(row.id, compensationInput);
+      }
+
       const stepOutput: StepOutput = {
         stepId: step.id,
         output: result.output,
@@ -181,7 +192,7 @@ export async function runSteps(
         executionStepRowId: row.id,
         attempt: row.attempt,
         onError: step.onError ?? "FAIL",
-        isSaga: false,
+        isSaga: await deps.getExecutionIsSaga(executionId),
         failureError: errorMessage,
         failedAt: new Date().toISOString(),
         iterationHistory:

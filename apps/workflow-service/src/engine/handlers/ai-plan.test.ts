@@ -171,6 +171,8 @@ describe("handleAiPlan — tool_call branch", () => {
       "search",
       { query: "quarterly report" },
       "exec-1",
+      "step-ai",
+      expect.any(Number),
     );
 
     const secondCallArgs = mockCallAgentPlan.mock.calls[1]![0];
