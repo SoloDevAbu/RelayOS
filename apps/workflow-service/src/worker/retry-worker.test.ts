@@ -16,6 +16,8 @@ vi.mock("../services/execution-service.js", () => ({
   insertRetryStepRow: (...args: unknown[]) => mockInsertRetryStepRow(...args),
   getLatestStepRows: (...args: unknown[]) => mockGetLatestStepRows(...args),
   updateExecutionCurrentStepId: (...args: unknown[]) => mockUpdateExecutionCurrentStepId(...args),
+  getExecutionIsSaga: vi.fn().mockResolvedValue(false),
+  saveCompensationInput: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@relayos/queue", () => ({

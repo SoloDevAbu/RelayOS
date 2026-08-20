@@ -14,6 +14,9 @@ vi.mock("../services/execution-service.js", () => ({
   insertExecutionSteps: (...args: unknown[]) => mockInsertExecutionSteps(...args),
   getLatestStepRows: vi.fn(),
   updateExecutionCurrentStepId: vi.fn(),
+  setExecutionIsSaga: vi.fn().mockResolvedValue(undefined),
+  getExecutionIsSaga: vi.fn().mockResolvedValue(false),
+  saveCompensationInput: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@relayos/db/client", () => ({

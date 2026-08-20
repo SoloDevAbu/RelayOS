@@ -9,6 +9,8 @@ import {
   getLatestStepRows,
   insertRetryStepRow,
   updateExecutionCurrentStepId,
+  getExecutionIsSaga,
+  saveCompensationInput,
 } from "../services/execution-service.js";
 import {
   transitionExecution,
@@ -103,6 +105,8 @@ export async function processRetry(
       updateContext,
       enqueueRetry,
       enqueueDlq,
+      saveCompensationInput,
+      getExecutionIsSaga,
     },
     { startFromStepId: stepId },
   );

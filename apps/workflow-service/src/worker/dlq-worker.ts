@@ -8,10 +8,14 @@ import {
   getWorkflowDefinition,
   getLatestStepRows,
   updateExecutionCurrentStepId,
+  getExecutionIsSaga,
+  saveCompensationInput,
+  getCompensatableSteps,
 } from "../services/execution-service.js";
 import {
   transitionExecution,
   transitionStep,
+  updateSagaStatus,
 } from "../engine/state-machine.js";
 import {
   getContext,
@@ -19,6 +23,9 @@ import {
   deleteContext,
 } from "../engine/context-manager.js";
 import { runSteps } from "../engine/step-runner.js";
+import { runSaga } from "../engine/saga/saga-coordinator.js";
+import { runCompensation } from "../engine/saga/compensation-runner.js";
+import { transitionCompensationStatus } from "../engine/state-machine.js";
 
 const retryQueue = new Queue<WorkflowRetryJob>(QUEUES.WORKFLOW_RETRY, {
   connection: bullmqRedis,
@@ -76,13 +83,39 @@ export async function processDlq(job: Job<DlqJob>): Promise<void> {
   );
 
   if (data.onError === "FAIL") {
-    // TODO (Phase 10.5): when isSaga is true, invoke sagaCoordinator instead
-    // of transitioning straight to FAILED. The coordinator will orchestrate
-    // compensating transactions for any steps that already completed.
     if (data.isSaga) {
-      log.info(
-        "isSaga=true but saga compensation not yet implemented — falling through to FAIL",
+      await transitionExecution(data.executionId, "RUNNING", "FAILED", {
+        error: data.failureError,
+        completedAt: new Date(),
+      });
+
+      const definition = await getWorkflowDefinition(data.workflowId);
+      if (!definition) {
+        log.error("Workflow definition not found during saga compensation — skipping compensation");
+        await deleteContext(data.executionId).catch((err) => {
+          log.warn({ err }, "Failed to clean up execution context from Redis");
+        });
+        return;
+      }
+
+      const sagaResult = await runSaga(data.executionId, {
+        getCompensatableSteps: (executionId) => getCompensatableSteps(executionId, definition),
+        updateSagaStatus,
+        runCompensation: (step, deps) => runCompensation(step, deps),
+      });
+
+      await updateSagaStatus(
+        data.executionId,
+        sagaResult === "compensated" ? "COMPENSATED" : "COMPENSATION_FAILED",
       );
+
+      log.info({ sagaResult }, "Saga compensation complete, execution is FAILED");
+
+      await deleteContext(data.executionId).catch((err) => {
+        log.warn({ err }, "Failed to clean up execution context from Redis");
+      });
+
+      return;
     }
 
     await transitionExecution(data.executionId, "RUNNING", "FAILED", {
@@ -134,7 +167,7 @@ export async function processDlq(job: Job<DlqJob>): Promise<void> {
     data.projectId,
     definition,
     stepRows,
-    { transitionStep, getContext, updateContext, enqueueRetry, enqueueDlq },
+    { transitionStep, getContext, updateContext, enqueueRetry, enqueueDlq, saveCompensationInput, getExecutionIsSaga },
     { startFromStepId: nextStepId },
   );
 

@@ -9,6 +9,9 @@ import {
   insertExecutionSteps,
   getLatestStepRows,
   updateExecutionCurrentStepId,
+  setExecutionIsSaga,
+  getExecutionIsSaga,
+  saveCompensationInput,
 } from "../services/execution-service.js";
 import {
   transitionExecution,
@@ -172,6 +175,8 @@ export async function processExecution(
           updateContext,
           enqueueRetry,
           enqueueDlq,
+          saveCompensationInput,
+          getExecutionIsSaga,
         },
         { startFromStepId: startStepId },
       );
@@ -210,6 +215,13 @@ export async function processExecution(
       stepRows = await insertExecutionSteps(executionId, definition);
 
       log.info({ stepCount: stepRows.length }, "Running steps");
+
+      const isSaga = definition.steps.some((s) => s.compensationToolId !== undefined);
+      if (isSaga) {
+        await setExecutionIsSaga(executionId, true);
+        log.info("Execution flagged as saga");
+      }
+
       const result = await runSteps(
         executionId,
         workflowId,
@@ -222,6 +234,8 @@ export async function processExecution(
           updateContext,
           enqueueRetry,
           enqueueDlq,
+          saveCompensationInput,
+          getExecutionIsSaga,
         },
       );
 
