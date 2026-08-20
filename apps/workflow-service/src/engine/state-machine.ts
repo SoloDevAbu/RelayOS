@@ -1,6 +1,7 @@
 import { db } from "@relayos/db/client";
 import { executions, executionSteps } from "@relayos/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
+import type { CompensationStatus, SagaStatus } from "@relayos/types";
 
 type ExecutionStatus =
   | "PENDING"
@@ -127,3 +128,61 @@ export async function transitionStep(
     throw new InvalidTransitionError("step", stepId, from, to);
   }
 }
+
+const COMPENSATION_TRANSITIONS: Record<string, CompensationStatus[]> = {
+  PENDING: ["RUNNING"],
+  RUNNING: ["COMPLETED", "FAILED"],
+};
+
+export async function transitionCompensationStatus(
+  stepId: string,
+  from: CompensationStatus | null,
+  to: CompensationStatus,
+  extra?: { compensationOutput?: unknown; compensatedAt?: Date },
+): Promise<void> {
+  if (from !== null) {
+    const allowed = COMPENSATION_TRANSITIONS[from];
+    if (!allowed || !allowed.includes(to)) {
+      throw new InvalidTransitionError("step", stepId, `compensation:${from}`, `compensation:${to}`);
+    }
+  } else if (to !== "PENDING") {
+    throw new InvalidTransitionError("step", stepId, "compensation:null", `compensation:${to}`);
+  }
+
+  const updates: Record<string, unknown> = {
+    compensationStatus: to,
+  };
+
+  if (extra?.compensationOutput !== undefined) updates.compensationOutput = extra.compensationOutput;
+  if (extra?.compensatedAt) updates.compensatedAt = extra.compensatedAt;
+
+  const whereClause = from === null
+    ? and(eq(executionSteps.id, stepId), isNull(executionSteps.compensationStatus))
+    : and(eq(executionSteps.id, stepId), eq(executionSteps.compensationStatus, from));
+
+  const result = await db
+    .update(executionSteps)
+    .set(updates)
+    .where(whereClause)
+    .returning({ id: executionSteps.id });
+
+  if (result.length === 0) {
+    throw new InvalidTransitionError(
+      "step",
+      stepId,
+      from === null ? "compensation:null" : `compensation:${from}`,
+      `compensation:${to}`,
+    );
+  }
+}
+
+export async function updateSagaStatus(
+  executionId: string,
+  sagaStatus: SagaStatus,
+): Promise<void> {
+  await db
+    .update(executions)
+    .set({ sagaStatus, updatedAt: new Date() })
+    .where(eq(executions.id, executionId));
+}
+

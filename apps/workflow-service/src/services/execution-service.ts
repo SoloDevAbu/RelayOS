@@ -173,3 +173,84 @@ export async function updateExecutionCurrentStepId(
     .where(eq(executions.id, executionId));
 }
 
+export async function setExecutionIsSaga(
+  executionId: string,
+  isSaga: boolean,
+): Promise<void> {
+  await db
+    .update(executions)
+    .set({ isSaga, updatedAt: new Date() })
+    .where(eq(executions.id, executionId));
+}
+
+export async function getExecutionIsSaga(
+  executionId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ isSaga: executions.isSaga })
+    .from(executions)
+    .where(eq(executions.id, executionId))
+    .limit(1);
+  return row?.isSaga ?? false;
+}
+
+export async function saveCompensationInput(
+  stepRowId: string,
+  input: Record<string, unknown>,
+): Promise<void> {
+  await db
+    .update(executionSteps)
+    .set({ compensationInput: input, compensationStatus: "PENDING" })
+    .where(eq(executionSteps.id, stepRowId));
+}
+
+export interface CompensatableStepRow {
+  stepRowId: string;
+  stepId: string;
+  compensationToolId: string;
+  compensationInput: Record<string, unknown>;
+  stepIndex: number;
+}
+
+export async function getCompensatableSteps(
+  executionId: string,
+  definition: WorkflowDefinition,
+): Promise<CompensatableStepRow[]> {
+  const rows = await db
+    .select({
+      id: executionSteps.id,
+      stepId: executionSteps.stepId,
+      compensationInput: executionSteps.compensationInput,
+    })
+    .from(executionSteps)
+    .where(
+      eq(executionSteps.executionId, executionId),
+    );
+
+  const completedWithCompensation = rows.filter(
+    (r) => r.compensationInput !== null,
+  );
+
+  const stepDefMap = new Map<string, { index: number; compensationToolId: string }>();
+  for (let i = 0; i < definition.steps.length; i++) {
+    const step = definition.steps[i]!;
+    if (step.compensationToolId) {
+      stepDefMap.set(step.id, { index: i, compensationToolId: step.compensationToolId });
+    }
+  }
+
+  return completedWithCompensation
+    .flatMap((r) => {
+      const def = stepDefMap.get(r.stepId);
+      if (!def) return [];
+      return [{
+        stepRowId: r.id,
+        stepId: r.stepId,
+        compensationToolId: def.compensationToolId,
+        compensationInput: r.compensationInput as Record<string, unknown>,
+        stepIndex: def.index,
+      }];
+    })
+    .sort((a, b) => b.stepIndex - a.stepIndex);
+}
+

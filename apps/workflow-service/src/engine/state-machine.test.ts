@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   transitionExecution,
   transitionStep,
+  transitionCompensationStatus,
+  updateSagaStatus,
   InvalidTransitionError,
 } from "./state-machine.js";
 
@@ -21,16 +23,22 @@ vi.mock("@relayos/db/schema", () => ({
   executions: {
     id: "executions.id",
     status: "executions.status",
+    sagaStatus: "executions.sagaStatus",
+    updatedAt: "executions.updatedAt",
   },
   executionSteps: {
     id: "executionSteps.id",
     status: "executionSteps.status",
+    compensationStatus: "executionSteps.compensationStatus",
+    compensationOutput: "executionSteps.compensationOutput",
+    compensatedAt: "executionSteps.compensatedAt",
   },
 }));
 
 vi.mock("drizzle-orm", () => ({
   eq: (col: string, val: string) => ({ col, val }),
   and: (...conds: unknown[]) => ({ _and: conds }),
+  isNull: (col: string) => ({ isNull: col }),
 }));
 
 beforeEach(() => {
@@ -268,3 +276,123 @@ describe("transitionStep", () => {
   });
 });
 
+describe("transitionCompensationStatus", () => {
+  it("transitions null → PENDING", async () => {
+    mockReturning.mockResolvedValue([{ id: "step-1" }]);
+
+    await transitionCompensationStatus("step-1", null, "PENDING");
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ compensationStatus: "PENDING" }),
+    );
+  });
+
+  it("transitions PENDING → RUNNING", async () => {
+    mockReturning.mockResolvedValue([{ id: "step-1" }]);
+
+    await transitionCompensationStatus("step-1", "PENDING", "RUNNING");
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ compensationStatus: "RUNNING" }),
+    );
+  });
+
+  it("transitions RUNNING → COMPLETED with output and timestamp", async () => {
+    mockReturning.mockResolvedValue([{ id: "step-1" }]);
+    const now = new Date("2026-01-01");
+    const output = { reversed: true };
+
+    await transitionCompensationStatus("step-1", "RUNNING", "COMPLETED", {
+      compensationOutput: output,
+      compensatedAt: now,
+    });
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        compensationStatus: "COMPLETED",
+        compensationOutput: output,
+        compensatedAt: now,
+      }),
+    );
+  });
+
+  it("transitions RUNNING → FAILED with error output", async () => {
+    mockReturning.mockResolvedValue([{ id: "step-1" }]);
+    const errorOutput = { error: "tool timed out" };
+
+    await transitionCompensationStatus("step-1", "RUNNING", "FAILED", {
+      compensationOutput: errorOutput,
+    });
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        compensationStatus: "FAILED",
+        compensationOutput: errorOutput,
+      }),
+    );
+  });
+
+  it("rejects null → RUNNING (must go through PENDING first)", async () => {
+    await expect(
+      transitionCompensationStatus("step-1", null, "RUNNING"),
+    ).rejects.toThrow(InvalidTransitionError);
+  });
+
+  it("rejects PENDING → COMPLETED (must go through RUNNING)", async () => {
+    await expect(
+      transitionCompensationStatus("step-1", "PENDING", "COMPLETED"),
+    ).rejects.toThrow(InvalidTransitionError);
+  });
+
+  it("rejects COMPLETED → RUNNING", async () => {
+    await expect(
+      transitionCompensationStatus("step-1", "COMPLETED", "RUNNING"),
+    ).rejects.toThrow(InvalidTransitionError);
+  });
+
+  it("rejects FAILED → COMPLETED", async () => {
+    await expect(
+      transitionCompensationStatus("step-1", "FAILED", "COMPLETED"),
+    ).rejects.toThrow(InvalidTransitionError);
+  });
+
+  it("throws on optimistic concurrency conflict (0 rows returned)", async () => {
+    mockReturning.mockResolvedValue([]);
+
+    await expect(
+      transitionCompensationStatus("step-1", null, "PENDING"),
+    ).rejects.toThrow(InvalidTransitionError);
+  });
+});
+
+describe("updateSagaStatus", () => {
+  it("sets saga_status to COMPENSATING", async () => {
+    mockReturning.mockResolvedValue([]);
+
+    await updateSagaStatus("exec-1", "COMPENSATING");
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ sagaStatus: "COMPENSATING" }),
+    );
+  });
+
+  it("sets saga_status to COMPENSATED", async () => {
+    mockReturning.mockResolvedValue([]);
+
+    await updateSagaStatus("exec-1", "COMPENSATED");
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ sagaStatus: "COMPENSATED" }),
+    );
+  });
+
+  it("sets saga_status to COMPENSATION_FAILED", async () => {
+    mockReturning.mockResolvedValue([]);
+
+    await updateSagaStatus("exec-1", "COMPENSATION_FAILED");
+
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({ sagaStatus: "COMPENSATION_FAILED" }),
+    );
+  });
+});
